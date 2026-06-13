@@ -1,0 +1,372 @@
+/* ============================================================
+   CANDIDATE STAGE DETAIL CARDS (SCREENING & FUNCTIONAL)
+   ============================================================ */
+.jd-stage-candidates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.jd-candidate-row-card {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  transition: var(--spring-smooth);
+  box-shadow: var(--glass-shadow);
+  margin-bottom: 20px;
+  position: relative;
+}
+
+.jd-candidate-row-card:hover {
+  border-color: var(--glass-border-gold);
+  transform: translateY(-2px);
+  box-shadow: var(--glass-shadow-hover), var(--glass-glow-indigo-hover);
+}
+
+.jd-candidate-row-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  pointer-events: none;
+}
+
+body.light-theme .jd-candidate-row-card {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+}
+
+body.light-theme .jd-candidate-row-card:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-hover);
+  box-shadow: var(--glass-shadow-hover), var(--glass-glow-indigo-hover);
+}
+
+.jd-candidate-row-card .jd-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--glass-border);
+  padding-bottom: 16px;
+}
+
+.jd-candidate-row-card .cand-name {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--color-text-primary);
+}
+
+.jd-candidate-row-card .cand-email {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.jd-candidate-row-card .score-badge {
+  margin-left: auto;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+}
+
+.jd-candidate-row-card .score-badge.indigo {
+  background: var(--color-indigo-dim);
+  border: 1px solid rgba(var(--color-gold-rgb), 0.25);
+  color: var(--color-indigo-light);
+  box-shadow: 0 0 10px rgba(var(--color-gold-rgb), 0.08);
+}
+
+.jd-candidate-row-card .score-badge.gold {
+  background: var(--color-gold-dim);
+  border: 1px solid var(--glass-border-gold);
+  color: var(--color-gold);
+  box-shadow: 0 0 10px rgba(var(--color-gold-rgb), 0.08);
+}
+
+body.light-theme .jd-candidate-row-card .score-badge.indigo {
+  background: rgba(var(--color-indigo-rgb), 0.06);
+  border-color: rgba(var(--color-indigo-rgb), 0.15);
+  color: var(--color-indigo);
+}
+
+body.light-theme .jd-candidate-row-card .score-badge.gold {
+  background: rgba(var(--color-gold-rgb), 0.06);
+  border-color: rgba(var(--color-gold-rgb), 0.15);
+  color: var(--color-gold);
+}
+
+.jd-candidate-row-card .jd-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.screening-audio-player {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 12px 18px;
+}
+
+body.light-theme .screening-audio-player {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.05);
+}
+
+.btn-player-play {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border-gold);
+  background: var(--color-gold-dim);
+  color: var(--color-gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--spring-snappy);
+  flex-shrink: 0;
+}
+
+.btn-player-play:hover {
+  background: var(--color-gold);
+  color: #0a0b14;
+  transform: scale(1.1);
+}
+
+.player-wave-bars {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-grow: 1;
+  height: 24px;
+}
+
+.player-wave-bar {
+  flex-grow: 1;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 1px;
+  height: 40%;
+  transform-origin: bottom;
+  transform: scaleY(var(--wave-height, 0.4));
+  transition: transform 0.15s ease-out, background-color 0.25s;
+}
+
+.player-wave-bar.played {
+  background: var(--color-gold);
+}
+
+body.light-theme .player-wave-bar {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+body.light-theme .player-wave-bar.played {
+  background: var(--color-gold);
+}
+
+.player-time {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  min-width: 65px;
+  text-align: right;
+}
+
+.transcript-box {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-indigo-dim);
+  background: rgba(var(--color-indigo-rgb), 0.04);
+  text-align: left;
+}
+
+body.light-theme .transcript-box {
+  background: rgba(0, 0, 0, 0.015);
+}
+
+.transcript-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.transcript-text {
+  margin-top: 6px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+/* ============================================================
+   CODE EVALUATOR / EDITOR SANDBOX STYLES
+   ============================================================ */
+.code-review-pane {
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  overflow: hidden;
+}
+
+.code-review-pane .code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.35);
+  border-bottom: 1px solid var(--glass-border);
+  padding: 10px 16px;
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+}
+
+.code-review-pane .code-header .file-name {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.code-review-pane .code-header .reviewer-tag {
+  color: var(--color-gold);
+  font-weight: 500;
+}
+
+.code-review-pane .code-box {
+  margin: 0;
+  background: #0f1015;
+  padding: 16px;
+  max-height: 250px;
+  overflow-y: auto;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  font-family: var(--font-mono);
+  color: #e2e8f0;
+  text-align: left;
+}
+
+.code-review-pane .review-comment {
+  background: rgba(var(--color-gold-rgb), 0.04);
+  border-top: 1px solid var(--glass-border);
+  border-left: 3px solid var(--color-gold);
+  padding: 14px 18px;
+  font-size: 0.85rem;
+  text-align: left;
+}
+
+.code-review-pane .review-comment strong {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--color-gold-light);
+}
+
+.code-review-pane .review-comment p {
+  margin-top: 6px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+body.light-theme .code-review-pane .code-box {
+  background: #0f1015 !important;
+  color: #e2e8f0 !important;
+}
+
+body.light-theme .code-review-pane .code-header {
+  background: rgba(0, 0, 0, 0.8) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+body.light-theme .code-review-pane .code-header .file-name {
+  color: #ffffff !important;
+}
+
+body.light-theme .code-review-pane .review-comment {
+  background: rgba(var(--color-gold-rgb), 0.05) !important;
+}
+
+/* Code highlighting support inside code-box and code-view-container */
+.code-box .keyword,
+.code-view-container .keyword  { color: #c084fc !important; }
+.code-box .string,
+.code-view-container .string   { color: #34d099 !important; }
+.code-box .func,
+.code-view-container .func     { color: #38bdf8 !important; }
+.code-box .class-name,
+.code-view-container .class-name { color: #fb923c !important; }
+
+/* ============================================================
+   CANDIDATE STAGE ACTION BUTTONS
+   ============================================================ */
+.jd-candidate-row-card .jd-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.btn-stage-reject {
+  background: transparent;
+  border: 1px solid rgba(255, 107, 53, 0.3);
+  color: var(--color-orange);
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--spring-fast);
+}
+
+.btn-stage-reject:hover {
+  background: rgba(255, 107, 53, 0.12);
+  border-color: var(--color-orange);
+}
+
+.btn-stage-advance {
+  background: var(--glass-bg-hover);
+  border: 1px solid var(--glass-border-gold);
+  color: var(--color-gold);
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--spring-snappy);
+}
+
+.btn-stage-advance:hover {
+  background: var(--color-gold);
+  color: #0a0b14;
+  transform: translateY(-1px);
+  box-shadow: var(--glass-glow-gold-hover);
+}
+
+.btn-stage-advance:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-stage-advance:disabled:hover {
+  background: var(--glass-bg-hover);
+  color: var(--color-gold);
+}
+
+body.light-theme .btn-stage-advance:hover {
+  color: #ffffff !important;
+}
+
+body.light-theme .btn-stage-advance:disabled:hover {
+  color: var(--color-gold) !important;
+}
+

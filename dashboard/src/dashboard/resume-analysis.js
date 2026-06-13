@@ -1,0 +1,1079 @@
+import { document } from './runtime.js';
+import { escapeHTML } from './escape.js';
+import { callDeepSeekAPI, parseAIJson, saveStateToLocalStorage } from './ai-api.js';
+import { renderJobDetailPanes } from './job-detail-panes.js';
+import { appendTerminalLog } from './kanban-swarm.js';
+import { openReportDrawerForCandidate } from './report.js';
+import { computeWeightedScore, getScoringConfig, recommendationFromScore } from './scoring-config.js';
+import { soundEngine } from './sound.js';
+import { extractResumeIdentity, showPremiumToast } from './sourcing.js';
+import { AppState } from './state.js';
+
+// ==========================================
+// RESUME ANALYSIS (AI-powered, Lina)
+// ==========================================
+
+const resumeTextCache = {};
+const resumeIdentityCache = {};
+const resumeAnalysisCache = {};
+const reportChatCache = {};
+
+function cacheResumeTextAndIdentity(cid, text, filename = '') {
+  if (!text || isGarbageText(text)) return null;
+
+  resumeTextCache[cid] = text;
+  const candidate = AppState.candidates.find(c => c.id === cid);
+  const identity = extractResumeIdentity(text, candidate?.name || '', filename);
+  resumeIdentityCache[cid] = identity;
+
+  if (candidate) {
+    if (identity.name && identity.source !== 'filename') candidate.name = identity.name;
+    if (identity.email) candidate.email = identity.email;
+    if (identity.phone) candidate.phone = identity.phone;
+    if (identity.linkedin) candidate.linkedin = identity.linkedin;
+    candidate.resumeIdentitySource = identity.source;
+    saveStateToLocalStorage();
+    refreshResumeCandidateRowIdentity(cid);
+  }
+
+  return identity;
+}
+
+function refreshResumeCandidateRowIdentity(cid) {
+  const candidate = AppState.candidates.find(c => c.id === cid);
+  const row = document.querySelector(`tr[data-cid="${cid}"]`);
+  if (!candidate || !row) return;
+
+  const nameEl = row.querySelector('.cand-name-link');
+  const emailEl = row.querySelector('.cand-email-sub');
+  if (nameEl) nameEl.textContent = candidate.name;
+  if (emailEl) emailEl.textContent = candidate.email || 'No email found';
+}
+
+function generateAutoResumeAnalysis(candidateName) {
+  // Strictly resume-analysis only — no hallucinated later-stage data
+  const matchScore = Math.round(50 + Math.random() * 45);
+  return {
+    matchScore,
+    summary: `${candidateName}'s resume shows relevant experience and skills for the role.`,
+    skills: {
+      detected: ['Communication', 'Project Management'],
+      matched: ['Proposal Writing'],
+      missing: []
+    },
+    recommendation: matchScore >= 70 ? 'Advance' : 'Hold'
+  };
+}
+
+function renderResumeStagePaneForJob(candidates, job, container) {
+  // Hydrate the in-memory cache from analyses persisted on candidates
+  candidates.forEach(c => {
+    if (!resumeAnalysisCache[c.id] && c.resumeAnalysis) resumeAnalysisCache[c.id] = c.resumeAnalysis;
+  });
+
+  const getMatchClass = (score) => {
+    if (score >= 75) return 'high';
+    if (score >= 50) return 'medium';
+    if (score > 0) return 'low';
+    return 'pending';
+  };
+
+  const getRecBadge = (rec) => {
+    if (!rec) return '';
+    const cls = rec === 'Advance' ? 'high' : rec === 'Hold' ? 'medium' : 'low';
+    return `<span class="ra-rec-badge ${cls}">${escapeHTML(rec)}</span>`;
+  };
+
+  const pendingCount = candidates.filter(c => !resumeAnalysisCache[c.id]).length;
+  const analysedCount = candidates.length - pendingCount;
+
+  container.innerHTML = `
+    <div class="stage-table-container">
+      <div class="ra-toolbar">
+        <div class="ra-toolbar-left">
+          <span class="ra-toolbar-stat">${analysedCount} analysed</span>
+          <span class="ra-toolbar-stat pending">${pendingCount} pending</span>
+        </div>
+        <div class="ra-toolbar-right">
+          ${pendingCount > 0 ? `<button class="btn-ra-analyse-all" id="btn-ra-analyse-all">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            Analyse All (${pendingCount})
+          </button>` : ''}
+        </div>
+      </div>
+      <div class="ra-table-wrapper">
+        <table class="ra-data-table">
+          <thead>
+            <tr>
+              <th style="width:36px;"><input type="checkbox" class="table-checkbox-all" /></th>
+              <th>Candidate</th>
+              <th>Match</th>
+              <th>Recommendation</th>
+              <th>Resume Input</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${candidates.map(c => {
+              const cached = resumeAnalysisCache[c.id];
+              const score = cached ? cached.matchScore : 0;
+              const matchClass = getMatchClass(score);
+              const isAnalysed = !!cached;
+              const hasText = !!resumeTextCache[c.id];
+              return `
+                <tr data-candidate-id="${c.id}" data-cid="${c.id}" class="${isAnalysed ? 'ra-row-done' : ''}">
+                  <td><input type="checkbox" class="table-checkbox-row" /></td>
+                  <td>
+                    <div class="table-candidate-cell">
+                      <span class="cand-name-link">${escapeHTML(c.name)}</span>
+                      <span class="cand-email-sub">${escapeHTML(c.email)}</span>
+                      ${isAnalysed && cached.summary ? `<span class="ra-summary-preview">${escapeHTML(cached.summary.slice(0, 90))}${cached.summary.length > 90 ? '…' : ''}</span>` : ''}
+                    </div>
+                  </td>
+                  <td>
+                    <span class="ra-match-pill ${matchClass}">${isAnalysed ? score + '%' : '—'}</span>
+                  </td>
+                  <td>
+                    ${isAnalysed ? getRecBadge(cached.recommendation) : '<span class="ra-status-badge pending">Pending</span>'}
+                  </td>
+                  <td>
+                    <div class="ra-input-cell">
+                      <input type="file" id="ra-file-${c.id}" accept=".pdf,.doc,.docx,.txt" hidden>
+                      ${isAnalysed
+                        ? `<button class="btn-ra-view-resume" data-cid="${c.id}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            View Report
+                          </button>`
+                        : `<div class="ra-input-group">
+                            <button class="btn-ra-upload" data-cid="${c.id}" title="Upload resume file">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                              ${hasText ? 'Replace' : 'Upload'}
+                            </button>
+                            <span class="ra-file-status ${hasText ? 'has-file' : ''}">${hasText ? 'Text loaded' : 'No file'}</span>
+                            <button class="btn-ra-analyse" data-cid="${c.id}" id="ra-btn-${c.id}">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                              Analyse
+                            </button>
+                          </div>`
+                      }
+                      ${!isAnalysed ? `<textarea id="ra-paste-${c.id}" class="ra-paste-area" placeholder="Or paste resume text here..." rows="2"></textarea>` : ''}
+                    </div>
+                  </td>
+                  <td>
+                    <div class="ra-action-btns">
+                      <button class="btn-stage-reject" data-candidate-id="${c.id}">Reject</button>
+                      <button class="btn-stage-advance" data-candidate-id="${c.id}" data-next-stage="Screening">Advance</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="stage-table-footer">
+        <span class="table-selection-info">${candidates.length} candidate${candidates.length !== 1 ? 's' : ''} in resume analysis</span>
+        <div class="table-pagination">
+          <span>Page 1 of 1</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  bindResumeAnalysisEvents(job);
+}
+
+function bindResumeAnalysisEvents(job) {
+  document.querySelectorAll('.ra-data-table tr[data-cid]').forEach(row => {
+    const cid = row.dataset.cid;
+    const fileInput = document.getElementById(`ra-file-${cid}`);
+    const analyseBtn = row.querySelector('.btn-ra-analyse');
+    const viewBtn = row.querySelector('.btn-ra-view-resume');
+    const uploadBtn = row.querySelector('.btn-ra-upload');
+    const pasteArea = document.getElementById(`ra-paste-${cid}`);
+
+    uploadBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput?.click();
+    });
+
+    fileInput?.addEventListener('change', async () => {
+      if (fileInput.files[0]) {
+        await handleResumeFile(cid, fileInput.files[0]);
+        const badge = row.querySelector('.ra-file-status');
+        if (badge) {
+          badge.textContent = fileInput.files[0].name;
+          badge.classList.add('has-file');
+        }
+      }
+    });
+
+    analyseBtn?.addEventListener('click', async () => {
+      const hasPaste = pasteArea && pasteArea.value.trim().length > 20;
+      const hasFile = resumeTextCache[cid];
+
+      if (!hasPaste && !hasFile) {
+        runResumeAnalysis(cid, job);
+        return;
+      }
+
+      if (pasteArea && pasteArea.value.trim()) {
+        const existing = resumeTextCache[cid] || '';
+        cacheResumeTextAndIdentity(cid, (existing + '\n' + pasteArea.value.trim()).trim(), 'pasted resume');
+      }
+      runResumeAnalysis(cid, job);
+    });
+
+    viewBtn?.addEventListener('click', () => {
+      if (resumeAnalysisCache[cid]) {
+        openReportDrawerForCandidate(cid);
+      }
+    });
+  });
+
+  const analyseAllBtn = document.getElementById('btn-ra-analyse-all');
+  analyseAllBtn?.addEventListener('click', () => {
+    const pendingCids = [];
+    document.querySelectorAll('.ra-data-table tr[data-cid]').forEach(row => {
+      if (!resumeAnalysisCache[row.dataset.cid]) {
+        pendingCids.push(row.dataset.cid);
+      }
+    });
+    if (pendingCids.length === 0) {
+      showPremiumToast('All candidates already analysed.', 'info');
+      return;
+    }
+    runBulkResumeAnalysis(pendingCids, job);
+  });
+}
+
+
+function extractNameFromResumeText(text) {
+  return extractResumeIdentity(text).name || null;
+}
+async function handleResumeFile(cid, file) {
+  const isPdfOrDocx = /\.(pdf|docx?)$/i.test(file.name);
+
+  if (isPdfOrDocx) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const resp = await fetch('/api/parse-file', { method: 'POST', body: formData });
+      if (!resp.ok) throw new Error('Parse failed');
+      const data = await resp.json();
+      if (data.text && !isGarbageText(data.text)) {
+        const identity = cacheResumeTextAndIdentity(cid, data.text, file.name);
+        showPremiumToast(`${file.name} parsed — ${data.text.split('\\n').length} lines extracted.`, 'success');
+      } else {
+        resumeTextCache[cid] = null;
+        showPremiumToast(`${file.name} — could not extract text, will generate profile.`, 'info');
+      }
+    } catch {
+      resumeTextCache[cid] = null;
+      showPremiumToast(`Could not parse ${file.name} — will generate candidate profile.`, 'info');
+    }
+    return;
+  }
+
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = e.target.result;
+      if (isGarbageText(text)) {
+        resumeTextCache[cid] = null;
+        showPremiumToast(`${file.name} loaded — binary content, will generate candidate profile.`, 'info');
+      } else {
+        cacheResumeTextAndIdentity(cid, text, file.name);
+        showPremiumToast(`${file.name} loaded — ${text.split('\\n').length} lines extracted.`, 'success');
+      }
+      resolve();
+    };
+    reader.onerror = () => {
+      resumeTextCache[cid] = null;
+      showPremiumToast(`Could not read ${file.name} — will generate candidate profile.`, 'info');
+      resolve();
+    };
+    reader.readAsText(file);
+  });
+}
+
+function generateSyntheticResume(candidate, job) {
+  const allSkills = {
+    'Full Stack Developer': {
+      core: ['JavaScript', 'React', 'Node.js', 'PostgreSQL', 'TypeScript', 'REST APIs', 'Git', 'Docker', 'AWS', 'MongoDB', 'GraphQL', 'Redis', 'Express.js', 'Next.js', 'CI/CD', 'Kubernetes'],
+      companies: ['Infosys', 'TCS', 'Wipro', 'Flipkart', 'Razorpay', 'Swiggy', 'Paytm', 'Zoho'],
+      tasks: ['Built responsive web dashboards serving 50K+ daily users', 'Implemented RESTful microservices reducing API latency by 40%', 'Led migration from monolith to microservices architecture', 'Designed and maintained CI/CD pipelines with GitHub Actions', 'Optimized database queries resulting in 3x faster page loads', 'Mentored 3 junior developers on React best practices']
+    },
+    'Government Tender & Proposal Executive': {
+      core: ['Proposal Writing', 'RFP Analysis', 'Compliance', 'GeM Portal', 'SAP Ariba', 'Tender Management', 'Government Procurement', 'Documentation', 'MS Office', 'Contract Negotiation', 'Bid Management', 'CPPP Portal', 'Public Procurement', 'Financial Proposals'],
+      companies: ['L&T', 'BHEL', 'NTPC', 'Tata Projects', 'Adani Group', 'GMR Group', 'HCL Infra'],
+      tasks: ['Managed end-to-end tender lifecycle for 20+ government contracts', 'Drafted technical and financial proposals worth INR 50Cr+', 'Ensured 100% compliance with GeM and CPPP portal requirements', 'Coordinated with legal and finance teams for bid documentation', 'Won 15 government contracts through competitive bidding process', 'Maintained vendor database with 200+ suppliers']
+    }
+  };
+  const profile = allSkills[job.roleName] || allSkills['Full Stack Developer'];
+  const shuffled = [...profile.core].sort(() => 0.5 - Math.random());
+  const numSkills = 6 + Math.floor(Math.random() * 5);
+  const picked = shuffled.slice(0, numSkills);
+  const yrs = 1 + Math.floor(Math.random() * 7);
+  const company1 = profile.companies[Math.floor(Math.random() * profile.companies.length)];
+  const company2 = profile.companies.filter(c => c !== company1)[Math.floor(Math.random() * (profile.companies.length - 1))];
+  const tasks = [...profile.tasks].sort(() => 0.5 - Math.random()).slice(0, 3);
+  const tasks2 = [...profile.tasks].sort(() => 0.5 - Math.random()).slice(0, 2);
+
+  return `RESUME
+
+Name: ${candidate.name}
+Email: ${candidate.email}
+Phone: ${candidate.phone}
+
+PROFESSIONAL SUMMARY
+Results-driven professional with ${yrs} years of experience in ${job.roleName.toLowerCase()} roles. Strong background in ${picked.slice(0, 3).join(', ')} with a proven ability to deliver high-quality outcomes under deadline pressure.
+
+TECHNICAL SKILLS
+${picked.join(' | ')}
+
+WORK EXPERIENCE
+
+${job.roleName} — ${company1} (${Math.max(yrs - 2, 1)} years, current)
+${tasks.map(t => '  - ' + t).join('\n')}
+
+Associate ${job.roleName} — ${company2} (2 years)
+${tasks2.map(t => '  - ' + t).join('\n')}
+
+EDUCATION
+B.Tech in Computer Science — Indian Institute of Technology, Delhi (2018-2022)
+CGPA: ${(7 + Math.random() * 2.5).toFixed(1)}/10
+
+CERTIFICATIONS
+- AWS Certified Solutions Architect (2024)
+- Google Project Management Certificate (2023)`;
+}
+
+function isGarbageText(text) {
+  if (!text || text.length < 20) return true;
+  const printable = text.replace(/[^\x20-\x7E\n\r\t]/g, '');
+  return printable.length / text.length < 0.7;
+}
+
+function extractExperienceYearsFromText(text) {
+  const matches = [...String(text || '').matchAll(/(\d+(?:\.\d+)?)\+?\s*(?:years?|yrs?)\s+(?:of\s+)?experience/gi)];
+  if (!matches.length) return 'Not stated';
+  const years = Math.max(...matches.map(match => Number(match[1])).filter(Number.isFinite));
+  return `${years} year${years === 1 ? '' : 's'}`;
+}
+
+function clampScore(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
+}
+
+function asStringArray(v, max = 12) {
+  if (!Array.isArray(v)) return [];
+  return v.filter(Boolean).map(x => String(x).trim()).filter(Boolean).slice(0, max);
+}
+
+function buildCriteriaBlock(criteria, config) {
+  const lines = [];
+  if (criteria.mustHave.length) lines.push(`MUST HAVE (gate criteria): ${criteria.mustHave.join('; ')}`);
+  if (criteria.goodToHave.length) lines.push(`GOOD TO HAVE (bonus): ${criteria.goodToHave.join('; ')}`);
+  if (criteria.redFlags.length) lines.push(`RED FLAGS (disqualify if present): ${criteria.redFlags.join('; ')}`);
+  if (config.customCriteria.length) {
+    lines.push('RECRUITER CUSTOM CRITERIA (score each individually):');
+    config.customCriteria.forEach((c, i) => {
+      lines.push(`  ${i + 1}. ${c.label} (importance ${c.weight}/10)${c.description ? ` — ${c.description}` : ''}`);
+    });
+  }
+  return lines.length ? `\nSCREENING CRITERIA:\n${lines.join('\n')}` : '';
+}
+
+function deriveLegacyScorecard(dims) {
+  return {
+    technical: Math.round((dims.mustHave.score || 0) / 10 * 10) / 10,
+    experience: Math.round((dims.experience.score || 0) / 10 * 10) / 10,
+    communication: Math.round(((dims.projects.score + dims.education.score) / 2 || 0) / 10 * 10) / 10,
+    cultureFit: Math.round((dims.niceToHave.score || 0) / 10 * 10) / 10,
+  };
+}
+
+function applyGatesAndScore(result, config, criteria) {
+  const dims = result.dimensions;
+  const { matchScore, breakdown } = computeWeightedScore(dims, config, criteria);
+  result.matchScore = matchScore;
+  result.weightedBreakdown = breakdown;
+  result.gateNotes = [];
+
+  const missingMust = (result.criteriaVerdicts || [])
+    .filter(v => v.group === 'mustHave' && v.met !== true && v.met !== 'true' && v.met !== 'partial')
+    .map(v => v.criterion);
+  if (config.mustHaveGate && missingMust.length > 0 && result.matchScore > config.mustHaveCap) {
+    result.matchScore = config.mustHaveCap;
+    result.gateNotes.push(`Score capped at ${config.mustHaveCap}: missing must-have — ${missingMust.slice(0, 3).join(', ')}`);
+  }
+
+  result.recommendation = recommendationFromScore(result.matchScore, config);
+  if (config.mustHaveGate && missingMust.length > 0) result.recommendation = 'Reject';
+
+  if (result.redFlagsDetected.length > 0) {
+    result.matchScore = Math.min(30, result.matchScore);
+    result.recommendation = 'Reject';
+    result.gateNotes.push(`Red flag found: ${result.redFlagsDetected.join(', ')} — score capped at 30`);
+  }
+
+  if (!result.recommendationReason) {
+    result.recommendationReason = `Weighted score of ${result.matchScore} against your configured criteria yields ${result.recommendation}.`;
+  }
+  result.scorecard = deriveLegacyScorecard(dims);
+  result.analysedAt = new Date().toISOString();
+}
+
+function normalizeDeepResult(result, config, criteria) {
+  const dims = result.dimensions && typeof result.dimensions === 'object' ? result.dimensions : {};
+  ['mustHave', 'niceToHave', 'projects', 'experience', 'education', 'custom'].forEach(k => {
+    if (!dims[k] || typeof dims[k] !== 'object') dims[k] = { score: 0, evidence: '' };
+    dims[k].score = clampScore(dims[k].score);
+    dims[k].evidence = dims[k].evidence ? String(dims[k].evidence) : '';
+  });
+  result.dimensions = dims;
+
+  if (!result.skills || typeof result.skills !== 'object') result.skills = {};
+  result.skills.detected = asStringArray(result.skills.detected, 8);
+  result.skills.matched = asStringArray(result.skills.matched, 16);
+  result.skills.missing = asStringArray(result.skills.missing, 16);
+  result.redFlagsDetected = asStringArray(result.redFlagsDetected, 8);
+  result.strengths = asStringArray(result.strengths, 6);
+  result.improvements = asStringArray(result.improvements, 5);
+  result.interviewProbes = asStringArray(result.interviewProbes, 5);
+  result.recommendationBullets = asStringArray(result.recommendationBullets, 5);
+  result.summary = result.summary ? String(result.summary) : 'Resume analysed against the configured job criteria.';
+  result.experienceYears = result.experienceYears ? String(result.experienceYears) : 'Not stated';
+
+  result.projects = (Array.isArray(result.projects) ? result.projects : []).slice(0, 6).map(p => ({
+    name: String(p?.name || 'Untitled project'),
+    summary: String(p?.summary || ''),
+    relevance: clampScore(p?.relevance),
+    whyItMatters: String(p?.whyItMatters || ''),
+    skills: asStringArray(p?.skills, 8),
+  }));
+
+  result.competencies = (Array.isArray(result.competencies) ? result.competencies : []).slice(0, 8).map(c => ({
+    name: String(c?.name || 'Competency'),
+    score: clampScore(c?.score),
+    bullets: asStringArray(c?.bullets, 5),
+  }));
+
+  result.criteriaVerdicts = (Array.isArray(result.criteriaVerdicts) ? result.criteriaVerdicts : []).slice(0, 30).map(v => ({
+    criterion: String(v?.criterion || ''),
+    group: ['mustHave', 'goodToHave', 'custom', 'redFlag'].includes(v?.group) ? v.group : 'custom',
+    met: v?.met === true || v?.met === 'true' ? true : v?.met === 'partial' ? 'partial' : false,
+    evidence: String(v?.evidence || ''),
+  })).filter(v => v.criterion);
+
+  applyGatesAndScore(result, config, criteria);
+  return result;
+}
+
+function tokenize(text) {
+  return new Set(String(text).toLowerCase().match(/[a-z][a-z0-9+#.]{2,}/g) || []);
+}
+
+const STOPWORDS = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'have', 'has', 'are', 'was', 'were', 'will', 'can', 'their', 'our', 'your', 'into', 'using', 'used', 'use', 'work', 'worked', 'working', 'role', 'team', 'years', 'year', 'experience', 'skills', 'strong', 'ability', 'including', 'developed', 'managed']);
+
+function relevanceOverlap(textTokens, jdTokens) {
+  let hits = 0, total = 0;
+  jdTokens.forEach(t => {
+    if (STOPWORDS.has(t)) return;
+    total++;
+    if (textTokens.has(t)) hits++;
+  });
+  return total ? Math.round((hits / total) * 100) : 0;
+}
+
+function extractProjectsLocally(resumeText, job, criteria) {
+  const jdTokens = tokenize(`${job.roleName} ${job.description || ''} ${criteria.mustHave.join(' ')} ${criteria.goodToHave.join(' ')}`);
+  const lines = resumeText.split('\n');
+  const projects = [];
+  let current = null;
+  const headingRe = /^([A-Z][\w .,&()+/-]{4,70})(?:\s*[—–|:]\s*|\s*\()/;
+  let inSection = false;
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    const upper = trimmed.toUpperCase();
+    if (/^(PROJECTS?|WORK EXPERIENCE|EXPERIENCE|PROFESSIONAL EXPERIENCE|INTERNSHIPS?)\b/.test(upper)) { inSection = true; return; }
+    if (/^(EDUCATION|CERTIFICATIONS?|SKILLS|ACHIEVEMENTS|AWARDS|HOBBIES|LANGUAGES)\b/.test(upper)) {
+      if (current) projects.push(current);
+      inSection = false; current = null; return;
+    }
+    if (!inSection) return;
+    if (/^[-•*]/.test(trimmed)) {
+      if (current) current.body += ' ' + trimmed;
+      return;
+    }
+    const m = trimmed.match(headingRe);
+    if (m && trimmed.length < 90) {
+      if (current) projects.push(current);
+      current = { name: m[1].trim(), body: '' };
+    } else if (current) {
+      current.body += ' ' + trimmed;
+    }
+  });
+  if (current) projects.push(current);
+
+  const seen = new Set();
+  const unique = projects.filter(p => {
+    const key = p.name.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return unique.slice(0, 5).map(p => {
+    const relevance = Math.min(95, relevanceOverlap(tokenize(p.name + ' ' + p.body), jdTokens) + 25);
+    const skillHits = [...criteria.mustHave, ...criteria.goodToHave].filter(s =>
+      (p.name + ' ' + p.body).toLowerCase().includes(s.toLowerCase().split(/\s+/)[0] || '')
+    ).slice(0, 5);
+    return {
+      name: p.name,
+      summary: p.body.trim().slice(0, 160) || 'Listed in resume without further detail.',
+      relevance,
+      whyItMatters: relevance >= 50
+        ? `Overlaps directly with the ${job.roleName} requirements${skillHits.length ? ` (touches: ${skillHits.slice(0, 3).join(', ')})` : ''}.`
+        : 'Limited direct overlap with this role — treat as transferable experience and probe in interview.',
+      skills: skillHits,
+    };
+  });
+}
+
+function matchCriterion(resumeLower, criterion) {
+  const clean = criterion.replace(/[^\w\s+#.]/g, '').toLowerCase().trim();
+  if (!clean) return false;
+  if (resumeLower.includes(clean)) return true;
+  const words = clean.split(/\s+/).filter(w => w.length > 3 && !STOPWORDS.has(w));
+  if (!words.length) return false;
+  const hits = words.filter(w => resumeLower.includes(w)).length;
+  return hits === words.length ? true : hits / words.length >= 0.5 ? 'partial' : false;
+}
+
+function buildLocalDeepAnalysis(resumeText, job, config, criteria) {
+  const resumeLower = resumeText.toLowerCase();
+  const verdicts = [];
+  const matched = [], missing = [];
+
+  criteria.mustHave.forEach(c => {
+    const met = matchCriterion(resumeLower, c);
+    verdicts.push({ criterion: c, group: 'mustHave', met, evidence: met ? 'Keyword evidence found in resume text.' : 'No mention found in resume text.' });
+    (met === true || met === 'partial' ? matched : missing).push(c);
+  });
+  criteria.goodToHave.forEach(c => {
+    const met = matchCriterion(resumeLower, c);
+    verdicts.push({ criterion: c, group: 'goodToHave', met, evidence: met ? 'Keyword evidence found in resume text.' : 'Not found in resume text.' });
+    (met === true || met === 'partial' ? matched : missing).push(c);
+  });
+
+  const customScores = config.customCriteria.map(c => {
+    // Match against the label first; the description only dilutes keyword overlap
+    const met = matchCriterion(resumeLower, c.label) || matchCriterion(resumeLower, c.description || '');
+    verdicts.push({ criterion: c.label, group: 'custom', met, evidence: met ? 'Related keywords present in resume.' : 'No supporting evidence found.' });
+    return { weight: c.weight || 5, score: met === true ? 75 : met === 'partial' ? 50 : 20 };
+  });
+  const customWeightSum = customScores.reduce((s, c) => s + c.weight, 0);
+  const customScore = customWeightSum ? Math.round(customScores.reduce((s, c) => s + c.score * c.weight, 0) / customWeightSum) : 0;
+
+  const redFlagsFound = criteria.redFlags.filter(f => matchCriterion(resumeLower, f) === true);
+
+  const detected = ['JavaScript', 'TypeScript', 'React', 'Node.js', 'Python', 'SQL', 'AWS', 'Docker', 'Excel', 'Project Management', 'Agile', 'Communication', 'Proposal Writing', 'Compliance', 'Tender Management']
+    .filter(s => resumeLower.includes(s.toLowerCase())).slice(0, 8);
+
+  const projects = extractProjectsLocally(resumeText, job, criteria);
+  const projectsScore = projects.length ? Math.round(projects.reduce((s, p) => s + p.relevance, 0) / projects.length) : 30;
+
+  const expText = extractExperienceYearsFromText(resumeText);
+  const expYears = parseFloat(expText) || 0;
+  const bandMin = parseFloat(String(job.experienceBand || '').match(/\d+/)?.[0] || '0');
+  const experienceScore = expText === 'Not stated' ? 35 : Math.min(95, 50 + Math.min(expYears, bandMin + 4) * 10);
+
+  const eduScore = /ph\.?d|doctorate/.test(resumeLower) ? 90
+    : /master|m\.?tech|mba|m\.?sc/.test(resumeLower) ? 80
+    : /b\.?tech|bachelor|b\.?e\b|b\.?sc|undergraduate/.test(resumeLower) ? 70
+    : /diploma|certificat/.test(resumeLower) ? 55 : 35;
+
+  const mustRatio = criteria.mustHave.length ? criteria.mustHave.filter(c => matched.includes(c)).length / criteria.mustHave.length : 0;
+  const niceRatio = criteria.goodToHave.length ? criteria.goodToHave.filter(c => matched.includes(c)).length / criteria.goodToHave.length : 0;
+
+  const dims = {
+    mustHave: { score: Math.round(mustRatio * 100), evidence: `${criteria.mustHave.filter(c => matched.includes(c)).length}/${criteria.mustHave.length} must-have criteria evidenced in the text.` },
+    niceToHave: { score: Math.round(niceRatio * 100), evidence: `${criteria.goodToHave.filter(c => matched.includes(c)).length}/${criteria.goodToHave.length} nice-to-have criteria evidenced.` },
+    projects: { score: projectsScore, evidence: projects.length ? `${projects.length} project(s) parsed, avg relevance ${projectsScore}%.` : 'No distinct project sections found.' },
+    experience: { score: experienceScore, evidence: `Stated experience: ${expText}; band requires ${job.experienceBand || 'unspecified'}.` },
+    education: { score: eduScore, evidence: 'Education level inferred from degree keywords.' },
+    custom: { score: customScore, evidence: config.customCriteria.length ? 'Custom criteria keyword-matched individually.' : '' },
+  };
+
+  const missingMustList = criteria.mustHave.filter(c => missing.includes(c));
+  const result = {
+    engine: 'local',
+    summary: `Local rules engine: ${matched.length ? `evidenced ${matched.slice(0, 3).join(', ')}` : 'no configured criteria matched'}${missingMustList.length ? `; missing must-haves: ${missingMustList.slice(0, 2).join(', ')}` : ''}. ${projects.length ? `${projects.length} project(s) assessed for role relevance.` : ''}`,
+    experienceYears: expText,
+    skills: { detected, matched, missing },
+    redFlagsDetected: redFlagsFound,
+    dimensions: dims,
+    criteriaVerdicts: verdicts,
+    projects,
+    competencies: [
+      { name: 'Criteria Coverage', score: Math.round(mustRatio * 100), bullets: matched.length ? matched.slice(0, 4).map(m => `Evidence found for: ${m}`) : ['No configured criteria matched in the resume text.'] },
+      { name: 'Project Relevance', score: projectsScore, bullets: projects.slice(0, 3).map(p => `${p.name}: ${p.relevance}% relevant`) },
+      { name: 'Experience Depth', score: dims.experience.score, bullets: [dims.experience.evidence] },
+      { name: 'Education & Certifications', score: eduScore, bullets: [dims.education.evidence] },
+    ],
+    strengths: matched.slice(0, 3).map(m => `Demonstrates ${m} with direct resume evidence.`),
+    improvements: missing.slice(0, 3).map(m => `No evidence found for ${m} — verify in screening.`),
+    interviewProbes: missing.slice(0, 3).map(m => `Ask the candidate to walk through hands-on experience with ${m}.`),
+    recommendationBullets: [],
+    recommendationReason: '',
+  };
+  normalizeDeepResult(result, config, criteria);
+  return result;
+}
+
+async function runResumeAnalysis(cid, job) {
+  const pasteArea = document.getElementById(`ra-paste-${cid}`);
+  const btn = document.getElementById(`ra-btn-${cid}`);
+  let resumeText = ((resumeTextCache[cid] || '') + '\n' + (pasteArea?.value || '')).trim();
+  const candidate = AppState.candidates.find(c => c.id === cid);
+  if (!resumeText || isGarbageText(resumeText)) {
+    showPremiumToast('Upload a resume or paste resume text first.', 'error');
+    return false;
+  }
+
+  const origHTML = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="ra-spinner"></span> Analysing…`;
+  }
+
+  const criteria = job.resumeCriteria || { mustHave: [], redFlags: [], goodToHave: [] };
+  const config = getScoringConfig(job);
+  const criteriaBlock = buildCriteriaBlock(criteria, config);
+
+  appendTerminalLog(`<code>[${new Date().toLocaleTimeString()}] Lina:</code> Initiated deep resume analysis for <strong>${candidate ? escapeHTML(candidate.name) : cid}</strong>...`);
+  appendTerminalLog(`<code>[${new Date().toLocaleTimeString()}] Lina:</code> Scoring ${criteria.mustHave.length + criteria.goodToHave.length + config.customCriteria.length} criteria across 6 weighted dimensions for <strong>${escapeHTML(job.roleName)}</strong>...`);
+
+  const systemPrompt = `You are Lina, an expert recruiting analyst for IntervieHire. You perform rigorous, evidence-first resume screening FOR RECRUITERS — they need to understand exactly how this candidate's real work history maps to THEIR role.
+
+THINK DEEPLY, THEN REPORT:
+- For every project in the resume, reason about what it actually proves: scale, the candidate's own contribution, and how directly it transfers to this specific role.
+- Quote or paraphrase concrete resume evidence — never generic praise.
+- Score each dimension 0-100 INDEPENDENTLY. Do NOT compute an overall score; the platform combines dimensions using the recruiter's own weights.
+- Be honest. Thin or auto-generated resumes get low dimension scores and a note in the summary. Missing evidence = low score, not benefit of the doubt.
+
+DIMENSIONS (score each 0-100 with 1-line evidence):
+- mustHave: coverage of the MUST HAVE list (100 = all clearly evidenced)
+- niceToHave: coverage of GOOD TO HAVE list
+- projects: how relevant the candidate's actual projects are to this role's day-to-day work
+- experience: depth/seniority vs the required experience band
+- education: degrees and certifications relevant to the role
+- custom: performance against the RECRUITER CUSTOM CRITERIA only (ignore if none listed)
+
+STRICT RULES:
+- criteriaVerdicts must contain ONE entry per must-have, good-to-have and custom criterion with met true/false/"partial" and short evidence.
+- "missing" lists ONLY criteria from the configured lists that lack evidence. Never invent skills.
+- redFlagsDetected: ONLY items from the RED FLAGS list actually found.
+- competencies: 4-6 role-specific competencies you derive from the job description, each with score and 2-4 evidence bullets.
+
+Respond ONLY with valid JSON, no markdown fences:
+{
+  "summary": "2-3 sentences with specific evidence",
+  "experienceYears": "e.g. 4 years",
+  "dimensions": {
+    "mustHave": {"score": 0, "evidence": ""}, "niceToHave": {"score": 0, "evidence": ""},
+    "projects": {"score": 0, "evidence": ""}, "experience": {"score": 0, "evidence": ""},
+    "education": {"score": 0, "evidence": ""}, "custom": {"score": 0, "evidence": ""}
+  },
+  "criteriaVerdicts": [{"criterion": "", "group": "mustHave|goodToHave|custom", "met": true, "evidence": ""}],
+  "projects": [{"name": "", "summary": "1 line", "relevance": 0, "whyItMatters": "what this proves for OUR role", "skills": [""]}],
+  "skills": {"detected": ["max 8 other relevant skills"], "matched": ["criteria with evidence"], "missing": ["criteria lacking evidence"]},
+  "redFlagsDetected": [],
+  "competencies": [{"name": "", "score": 0, "bullets": [""]}],
+  "strengths": ["3-5 evidence-backed strengths"],
+  "improvements": ["2-4 specific gaps"],
+  "interviewProbes": ["3-4 questions to verify weak evidence in the next round"],
+  "recommendationBullets": ["3-4 executive-summary bullets for the hiring panel"],
+  "recommendationReason": "1 sentence"
+}`;
+
+  const userMsg = `JOB: ${job.cardName} (${job.roleName})
+Experience Required: ${job.experienceBand}
+Description: ${job.description || '(Not provided)'}${criteriaBlock}
+
+--- CANDIDATE RESUME ---
+${resumeText.slice(0, 5000)}`;
+
+  let result;
+  try {
+    const raw = await callDeepSeekAPI(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMsg }],
+      true
+    );
+    result = parseAIJson(raw);
+    result.engine = 'deepseek';
+    normalizeDeepResult(result, config, criteria);
+  } catch (err) {
+    console.warn('AI analysis failed, using local deep-scan engine:', err);
+    appendTerminalLog(`<code>[${new Date().toLocaleTimeString()}] Lina:</code> <span style="color: #f59e0b;">DeepSeek API offline. Engaging local deep-scan engine...</span>`);
+    try {
+      result = buildLocalDeepAnalysis(resumeText, job, config, criteria);
+    } catch (fallbackErr) {
+      console.error('Fallback analysis failed:', fallbackErr);
+      showPremiumToast('Analysis failed — please try again.', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
+      return false;
+    }
+  }
+
+  resumeAnalysisCache[cid] = result;
+  const cand = AppState.candidates.find(c => c.id === cid);
+  if (cand) {
+    cand.score = `${result.matchScore}%`;
+    cand.resumeAnalysis = result;
+    saveStateToLocalStorage();
+  }
+  renderAnalysisResult(cid, result);
+  showPremiumToast(result.engine === 'local' ? 'Resume analysed (local engine).' : 'Deep resume analysis complete.', 'success');
+  appendTerminalLog(`<code>[${new Date().toLocaleTimeString()}] Lina:</code> <strong>${candidate ? escapeHTML(candidate.name) : cid}</strong> scored <strong style="color: #10b981;">${result.matchScore}/100</strong> (weighted) → <strong>${escapeHTML(result.recommendation)}</strong>.`, result.recommendation === 'Advance' ? 'font-gold' : '');
+  return true;
+}
+
+function renderAnalysisResult(cid, result) {
+  const row = document.querySelector(`tr[data-cid="${cid}"]`);
+  if (!row) return;
+
+  row.classList.add('ra-row-done');
+  const tds = row.querySelectorAll('td');
+
+  const matchClass = result.matchScore >= 75 ? 'high' : result.matchScore >= 50 ? 'medium' : 'low';
+  if (tds[1]) {
+    const cell = tds[1].querySelector('.table-candidate-cell');
+    if (cell && result.summary) {
+      const existing = cell.querySelector('.ra-summary-preview');
+      if (existing) existing.remove();
+      const span = document.createElement('span');
+      span.className = 'ra-summary-preview';
+      span.textContent = result.summary.slice(0, 90) + (result.summary.length > 90 ? '…' : '');
+      cell.appendChild(span);
+    }
+  }
+  if (tds[2]) {
+    tds[2].innerHTML = `<span class="ra-match-pill ${matchClass}">${result.matchScore}%</span>`;
+  }
+  if (tds[3]) {
+    const recCls = result.recommendation === 'Advance' ? 'high' : result.recommendation === 'Hold' ? 'medium' : 'low';
+    tds[3].innerHTML = `<span class="ra-rec-badge ${recCls}">${escapeHTML(result.recommendation)}</span>`;
+  }
+  if (tds[4]) {
+    tds[4].innerHTML = `<div class="ra-input-cell">
+      <button class="btn-ra-view-resume" data-cid="${cid}">
+        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        View Report
+      </button>
+    </div>`;
+    tds[4].querySelector('.btn-ra-view-resume')?.addEventListener('click', () => {
+      openReportDrawerForCandidate(cid);
+    });
+  }
+
+  const pendingBtns = document.querySelectorAll('.btn-ra-analyse-all, .ra-toolbar-stat.pending');
+  const remaining = document.querySelectorAll('tr[data-cid]:not(.ra-row-done)').length;
+  pendingBtns.forEach(el => {
+    if (el.classList.contains('ra-toolbar-stat')) {
+      el.textContent = `${remaining} pending`;
+    } else if (remaining === 0) {
+      el.style.display = 'none';
+    } else {
+      el.innerHTML = el.innerHTML.replace(/\(\d+\)/, `(${remaining})`);
+    }
+  });
+  const analysedStat = document.querySelector('.ra-toolbar-stat:not(.pending)');
+  if (analysedStat) {
+    const done = document.querySelectorAll('tr.ra-row-done').length;
+    analysedStat.textContent = `${done} analysed`;
+  }
+}
+
+async function runBulkResumeAnalysis(candidateIds, job) {
+  const pending = candidateIds.filter(id => !resumeAnalysisCache[id]);
+  if (pending.length === 0) {
+    showPremiumToast('All candidates already analysed.', 'info');
+    return;
+  }
+  showPremiumToast(`Analysing ${pending.length} candidate${pending.length > 1 ? 's' : ''}…`, 'info');
+  let done = 0;
+  for (const cid of pending) {
+    try {
+      const ok = await runResumeAnalysis(cid, job);
+      if (ok === true) done++;
+    } catch {
+      showPremiumToast(`Failed to analyse candidate ${cid}, continuing…`, 'error');
+    }
+  }
+  showPremiumToast(`Bulk analysis complete: ${done}/${pending.length} succeeded.`, done === pending.length ? 'success' : 'info');
+}
+
+function toggleResumeCriteriaEdit(job) {
+  const section = document.querySelector('.ra-config-section');
+  if (!section) return;
+
+  const isEditing = section.classList.contains('editing');
+  if (isEditing) {
+    // Save mode
+    section.classList.remove('editing');
+    const criteria = { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 1 };
+    section.querySelectorAll('.ra-criteria-group.must-have .ra-criteria-edit-input').forEach(input => {
+      if (input.value.trim()) criteria.mustHave.push(input.value.trim());
+    });
+    section.querySelectorAll('.ra-criteria-group.red-flags .ra-criteria-edit-input').forEach(input => {
+      if (input.value.trim()) criteria.redFlags.push(input.value.trim());
+    });
+    section.querySelectorAll('.ra-criteria-group.good-to-have .ra-criteria-edit-input').forEach(input => {
+      if (input.value.trim()) criteria.goodToHave.push(input.value.trim());
+    });
+    const minMatch = section.querySelector('.ra-min-match-input');
+    if (minMatch) criteria.goodToHaveMinMatch = parseInt(minMatch.value) || 1;
+
+    job.resumeCriteria = criteria;
+    saveStateToLocalStorage();
+    showPremiumToast('Resume criteria saved.', 'success');
+
+    // Re-render by triggering the pane render
+    const resumeList = document.getElementById('list-stage-resume');
+    if (resumeList) {
+      const jobCandidates = AppState.candidates.filter(c => {
+        const jTitle = c.jobApplied;
+        return jTitle === job.roleName || jTitle === job.cardName;
+      });
+      const resumeCands = jobCandidates.filter(c => c.status === 'Resume');
+      // trigger full re-render by calling renderJobDetailPanes
+      if (typeof renderJobDetailPanes === 'function') renderJobDetailPanes(job);
+    }
+    return;
+  }
+
+  // Enter edit mode
+  section.classList.add('editing');
+  const criteria = job.resumeCriteria || { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 1 };
+
+  const editBtn = document.getElementById('btn-ra-edit-criteria');
+  if (editBtn) {
+    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Save';
+  }
+
+  // Transform criteria items into editable inputs
+  section.querySelectorAll('.ra-criteria-items').forEach(itemsContainer => {
+    const group = itemsContainer.closest('.ra-criteria-group');
+    const groupType = group.classList.contains('must-have') ? 'mustHave' : group.classList.contains('red-flags') ? 'redFlags' : 'goodToHave';
+    const items = criteria[groupType] || [];
+
+    itemsContainer.innerHTML = items.map((item, i) => `
+      <div class="ra-criteria-item-edit">
+        <span class="ra-criteria-num ${group.classList[1]}">${i + 1}</span>
+        <input type="text" class="ra-criteria-edit-input" value="${item}" />
+        <button class="btn-ra-remove-criteria" data-group="${groupType}" data-idx="${i}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    `).join('') + `
+      <button class="btn-ra-add-criteria" data-group="${groupType}">+ Add Criterion</button>
+    `;
+
+    // Add button handlers
+    itemsContainer.querySelectorAll('.btn-ra-remove-criteria').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.closest('.ra-criteria-item-edit').remove();
+        // Re-number
+        itemsContainer.querySelectorAll('.ra-criteria-num').forEach((num, idx) => {
+          num.textContent = idx + 1;
+        });
+      });
+    });
+
+    itemsContainer.querySelector('.btn-ra-add-criteria')?.addEventListener('click', () => {
+      const addBtn = itemsContainer.querySelector('.btn-ra-add-criteria');
+      const newItem = document.createElement('div');
+      newItem.className = 'ra-criteria-item-edit';
+      const count = itemsContainer.querySelectorAll('.ra-criteria-item-edit').length + 1;
+      newItem.innerHTML = `
+        <span class="ra-criteria-num ${group.classList[1]}">${count}</span>
+        <input type="text" class="ra-criteria-edit-input" value="" placeholder="Enter criterion..." />
+        <button class="btn-ra-remove-criteria">
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      `;
+      itemsContainer.insertBefore(newItem, addBtn);
+      newItem.querySelector('.btn-ra-remove-criteria').addEventListener('click', () => {
+        newItem.remove();
+        itemsContainer.querySelectorAll('.ra-criteria-num').forEach((num, idx) => { num.textContent = idx + 1; });
+      });
+      newItem.querySelector('input').focus();
+    });
+  });
+
+  // Make min match editable
+  const minMatchEl = section.querySelector('.ra-criteria-min-match');
+  if (minMatchEl) {
+    const currentMin = criteria.goodToHaveMinMatch || 1;
+    const totalGood = criteria.goodToHave.length;
+    minMatchEl.innerHTML = `Minimum match: <input type="number" class="ra-min-match-input" value="${currentMin}" min="1" max="${totalGood}" style="width:40px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:4px;color:var(--color-text-primary);text-align:center;padding:2px;font-size:0.78rem;" /> out of ${totalGood} criteria`;
+  }
+}
+
+function openScheduleModal(candidateName, mode, callback) {
+  const existing = document.getElementById('schedule-modal-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'schedule-modal-overlay';
+  overlay.className = 'schedule-modal-overlay';
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  const dateStr = tomorrow.toISOString().split('T')[0];
+  overlay.innerHTML = `
+    <div class="schedule-modal">
+      <h3>${mode === 'reschedule' ? 'Reschedule' : 'Schedule'} Interview — ${candidateName}</h3>
+      <div class="schedule-form-group">
+        <label>Date</label>
+        <input type="date" id="sched-date" value="${dateStr}" />
+      </div>
+      <div class="schedule-form-group">
+        <label>Time</label>
+        <input type="time" id="sched-time" value="10:00" />
+      </div>
+      <div class="schedule-form-group">
+        <label>Duration</label>
+        <select id="sched-duration" style="padding:8px 12px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:8px;color:var(--color-text-primary);font-size:0.82rem;outline:none;">
+          <option value="15">15 minutes</option>
+          <option value="30" selected>30 minutes</option>
+          <option value="45">45 minutes</option>
+          <option value="60">60 minutes</option>
+        </select>
+      </div>
+      <div class="schedule-modal-actions">
+        <button class="btn-schedule-cancel" id="sched-cancel">Cancel</button>
+        <button class="btn-schedule-confirm" id="sched-confirm">Confirm</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('sched-cancel').addEventListener('click', () => overlay.remove());
+  document.getElementById('sched-confirm').addEventListener('click', () => {
+    const date = document.getElementById('sched-date').value;
+    const time = document.getElementById('sched-time').value;
+    overlay.remove();
+    if (callback) callback(date, time);
+    showPremiumToast(`Interview ${mode === 'reschedule' ? 'rescheduled' : 'scheduled'} for ${candidateName} on ${date} at ${time}.`, 'success');
+    soundEngine.playChime([523.25, 659.25], 0.15, 0.08);
+  });
+}
+
+function buildFilterDropdown(chip, type, candidates, stageKey) {
+  if (chip._filterDropdown) { chip._filterDropdown.remove(); chip._filterDropdown = null; chip.classList.remove('active-filter'); return; }
+  document.querySelectorAll('.stage-filter-dropdown').forEach(d => d.remove());
+  document.querySelectorAll('.filter-chip.active-filter').forEach(c => { c.classList.remove('active-filter'); c._filterDropdown = null; });
+
+  const dd = document.createElement('div');
+  dd.className = 'stage-filter-dropdown';
+  dd.addEventListener('click', e => e.stopPropagation());
+
+  const filters = AppState.stageFilters[stageKey];
+
+  if (type === 'interviewStatus') {
+    const statuses = ['Completed', 'Incomplete', 'Evaluating', 'Attempting', 'Not Started', 'Slot Missed'];
+    const counts = {};
+    statuses.forEach(s => { counts[s] = candidates.filter(c => c.interviewStatus === s).length; });
+    dd.innerHTML = `
+      <div class="sfd-search"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Interview Status" /></div>
+      <div class="sfd-items">${statuses.map(s => `<label class="sfd-item"><input type="checkbox" value="${s}" ${filters.interviewStatus.includes(s) ? 'checked' : ''} /><span class="sfd-item-label">${s}</span><span class="sfd-item-count">${counts[s]}</span></label>`).join('')}</div>
+      <div class="sfd-footer"><button class="sfd-clear-btn">Clear filters</button></div>`;
+    dd.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+      filters.interviewStatus = [...dd.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
+      const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
+      if (activeJob) renderJobDetailPanes(activeJob);
+    }));
+    dd.querySelector('.sfd-clear-btn').addEventListener('click', () => { filters.interviewStatus = []; const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId); if (activeJob) renderJobDetailPanes(activeJob); });
+  } else if (type === 'cheatProb') {
+    const levels = ['High', 'Medium', 'Low'];
+    const counts = {};
+    levels.forEach(l => { counts[l] = candidates.filter(c => c.cheatProbability === l).length; });
+    dd.innerHTML = `
+      <div class="sfd-search"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Cheat Probability" /></div>
+      <div class="sfd-items">${levels.map(l => `<label class="sfd-item"><input type="checkbox" value="${l}" ${filters.cheatProb.includes(l) ? 'checked' : ''} /><span class="sfd-item-label">${l}</span><span class="sfd-item-count">${counts[l]}</span></label>`).join('')}</div>
+      <div class="sfd-footer"><button class="sfd-clear-btn">Clear filters</button></div>`;
+    dd.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+      filters.cheatProb = [...dd.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
+      const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId); if (activeJob) renderJobDetailPanes(activeJob);
+    }));
+    dd.querySelector('.sfd-clear-btn').addEventListener('click', () => { filters.cheatProb = []; const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId); if (activeJob) renderJobDetailPanes(activeJob); });
+  } else if (type === 'recruiterScreening') {
+    const vals = ['Good fit', 'Moderate fit', 'Poor fit'];
+    const counts = {};
+    vals.forEach(v => { counts[v] = candidates.filter(c => c.recruiterScreening === v).length; });
+    dd.innerHTML = `
+      <div class="sfd-search"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Recruiter Screening" /></div>
+      <div class="sfd-items">${vals.map(v => `<label class="sfd-item"><input type="checkbox" value="${v}" ${filters.recruiterScreening.includes(v) ? 'checked' : ''} /><span class="sfd-item-label">${v}</span><span class="sfd-item-count">${counts[v]}</span></label>`).join('')}</div>
+      <div class="sfd-footer"><button class="sfd-clear-btn">Clear filters</button></div>`;
+    dd.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+      filters.recruiterScreening = [...dd.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
+      const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId); if (activeJob) renderJobDetailPanes(activeJob);
+    }));
+    dd.querySelector('.sfd-clear-btn').addEventListener('click', () => { filters.recruiterScreening = []; const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId); if (activeJob) renderJobDetailPanes(activeJob); });
+  } else if (type === 'interviewScore') {
+    dd.innerHTML = `
+      <div class="sfd-range-row">
+        <label>Interview score</label>
+        <input type="number" class="sfd-range-input" id="sfd-score-min" value="${filters.scoreMin ?? 0}" min="0" max="100" />
+        <span class="sfd-range-sep">to</span>
+        <input type="number" class="sfd-range-input" id="sfd-score-max" value="${filters.scoreMax ?? 100}" min="0" max="100" />
+      </div>
+      <div class="sfd-actions-row">
+        <button class="sfd-btn-clear">Clear</button>
+        <button class="sfd-btn-apply">Apply</button>
+      </div>`;
+    dd.querySelector('.sfd-btn-apply').addEventListener('click', () => {
+      filters.scoreMin = parseInt(dd.querySelector('#sfd-score-min').value) || 0;
+      filters.scoreMax = parseInt(dd.querySelector('#sfd-score-max').value) || 100;
+      const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId); if (activeJob) renderJobDetailPanes(activeJob);
+    });
+    dd.querySelector('.sfd-btn-clear').addEventListener('click', () => { filters.scoreMin = null; filters.scoreMax = null; const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId); if (activeJob) renderJobDetailPanes(activeJob); });
+  } else if (type === 'actions') {
+    const acts = ['Shortlisted', 'Rejected', 'Waitlisted', 'Panel Shortlisted', 'Panel Rejected', 'Panel Waitlisted', 'Pending Action'];
+    dd.innerHTML = `
+      <div class="sfd-search"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Actions" /></div>
+      <div class="sfd-items">${acts.map(a => `<label class="sfd-item"><input type="checkbox" value="${a}" /><span class="sfd-item-label">${a}</span><span class="sfd-item-count">0</span></label>`).join('')}</div>`;
+  }
+
+  const rect = chip.getBoundingClientRect();
+  dd.style.left = rect.left + 'px';
+  dd.style.top = (rect.bottom + 4) + 'px';
+  document.body.appendChild(dd);
+  chip.classList.add('active-filter');
+  chip._filterDropdown = dd;
+
+  const closeOnScroll = () => { dd.remove(); chip.classList.remove('active-filter'); chip._filterDropdown = null; };
+  const mainContent = chip.closest('.main-content');
+  if (mainContent) mainContent.addEventListener('scroll', closeOnScroll, { once: true });
+}
+
+function applyStageFilters(candidates, stageKey) {
+  const f = AppState.stageFilters[stageKey];
+  if (!f) return candidates;
+  let filtered = candidates;
+  if (f.interviewStatus.length > 0) filtered = filtered.filter(c => f.interviewStatus.includes(c.interviewStatus));
+  if (f.cheatProb.length > 0) filtered = filtered.filter(c => f.cheatProb.includes(c.cheatProbability));
+  if (f.recruiterScreening.length > 0) filtered = filtered.filter(c => f.recruiterScreening.includes(c.recruiterScreening));
+  if (f.scoreMin != null) filtered = filtered.filter(c => c.interviewScore != null && c.interviewScore >= f.scoreMin);
+  if (f.scoreMax != null) filtered = filtered.filter(c => c.interviewScore != null && c.interviewScore <= f.scoreMax);
+  return filtered;
+}
+
+function hasActiveFilters(stageKey) {
+  const f = AppState.stageFilters[stageKey];
+  return f && (f.interviewStatus.length > 0 || f.cheatProb.length > 0 || f.recruiterScreening.length > 0 || f.scoreMin != null || f.scoreMax != null);
+}
+
+
+export { applyStageFilters, bindResumeAnalysisEvents, buildFilterDropdown, cacheResumeTextAndIdentity, extractExperienceYearsFromText, extractNameFromResumeText, generateAutoResumeAnalysis, generateSyntheticResume, handleResumeFile, hasActiveFilters, isGarbageText, openScheduleModal, refreshResumeCandidateRowIdentity, renderAnalysisResult, renderResumeStagePaneForJob, reportChatCache, resumeAnalysisCache, resumeIdentityCache, resumeTextCache, runBulkResumeAnalysis, runResumeAnalysis, toggleResumeCriteriaEdit };

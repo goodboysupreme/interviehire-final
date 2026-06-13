@@ -1,0 +1,210 @@
+/* ============================================================
+   CHANGE 4: REPORT DRAWER — 4 TABS
+   ============================================================ */
+.report-transcript-body {
+  padding: 16px 20px;
+}
+
+.report-caveats-body {
+  padding: 16px 20px;
+}
+
+.report-caveats-body .rubrics-section,
+.report-caveats-body .caveats-section {
+  margin-bottom: 16px;
+}
+
+.report-caveats-body .rubric-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.report-caveats-body .rubric-lbl {
+  flex: 0 0 130px;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+.report-caveats-body .rubric-bar-track {
+  flex: 1;
+  height: 3px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.report-caveats-body .rubric-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+
+.report-caveats-body .rubric-bar-fill.indigo {
+  background: var(--color-indigo);
+}
+
+.report-caveats-body .rubric-val {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  min-width: 40px;
+  text-align: right;
+}
+
+.report-caveats-body .section-sub-title {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.report-caveats-body .caveat-tag {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  margin-bottom: 6px;
+}
+
+.report-caveats-body .caveat-tag.warning {
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+  color: var(--color-text-secondary);
+}
+
+.report-caveats-body .caveat-tag.info {
+  background: rgba(var(--color-indigo-rgb), 0.06);
+  border: 1px solid rgba(var(--color-indigo-rgb), 0.15);
+  color: var(--color-text-secondary);
+}
+
+.report-caveats-body .pros-cons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.report-caveats-body .pro-col ul,
+.report-caveats-body .con-col ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.report-caveats-body .pro-col li,
+.report-caveats-body .con-col li {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.report-caveats-body .list-bullet.pro { color: #22c55e; font-weight: 700; }
+.report-caveats-body .list-bullet.con { color: #ef4444; font-weight: 700; }
+
+.report-caveats-body .section-sub-title.pros { color: #22c55e; }
+.report-caveats-body .section-sub-title.cons { color: #ef4444; }
+
+.report-actions-body {
+  padding: 16px 20px;
+}
+
+.report-actions-body .recruiter-notes-wrap {
+  margin-bottom: 16px;
+}
+
+.report-actions-body .notes-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.report-actions-body .recruiter-notes-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.15);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  resize: vertical;
+  transition: var(--spring-fast);
+}
+
+.report-actions-body .recruiter-notes-textarea:focus {
+  outline: none;
+  border-color: var(--glass-border-gold);
+}
+
+.report-action-buttons .jd-card-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* Light theme overrides for tables */
+body.light-theme .stage-table-container {
+  background: rgba(255,255,255,0.8);
+  border-color: rgba(0,0,0,0.08);
+}
+body.light-theme .stage-table-filters {
+  border-bottom-color: rgba(0,0,0,0.06);
+}
+body.light-theme .filter-chip {
+  background: rgba(0,0,0,0.03);
+  border-color: rgba(0,0,0,0.08);
+  color: #64748b;
+}
+body.light-theme .stage-data-table thead th {
+  border-bottom-color: rgba(0,0,0,0.08);
+  color: #64748b;
+}
+body.light-theme .stage-data-table tbody tr {
+  border-bottom-color: rgba(0,0,0,0.04);
+}
+body.light-theme .stage-data-table tbody tr:hover {
+  background: rgba(0,0,0,0.02);
+}
+body.light-theme .stage-data-table tbody td {
+  color: #334155;
+}
+body.light-theme .cand-name-link {
+  color: #0f172a;
+}
+body.light-theme .stage-table-footer {
+  border-top-color: rgba(0,0,0,0.06);
+}
+body.light-theme .action-select-status,
+body.light-theme .rows-per-page {
+  background: rgba(255,255,255,0.8);
+  border-color: rgba(0,0,0,0.1);
+  color: #334155;
+}
+body.light-theme .pagination-btns button {
+  border-color: rgba(0,0,0,0.1);
+  color: #64748b;
+}
+body.light-theme .btn-bulk-actions,
+body.light-theme .btn-columns-toggle,
+body.light-theme .btn-export-table {
+  border-color: rgba(0,0,0,0.1);
+  color: #64748b;
+}
+

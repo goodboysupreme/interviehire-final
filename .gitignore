@@ -1,0 +1,52 @@
+# Secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+*.env
+
+# Dependencies
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+
+# Python
+venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# Build output
+dist/
+**/dist/
+build/
+.next/
+**/.next/
+out/
+*.tsbuildinfo
+.turbo/
+
+# Prisma generated client (regenerate via prisma generate)
+**/generated/
+
+# Runtime / artifacts
+uploads/
+reports/
+*.pdf
+*.log
+logs/
+coverage/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test/automation
+.playwright-mcp/
+test-results/
+playwright-report/

@@ -1,0 +1,207 @@
+/* ============================================================
+   intervieHire — Crystal Glass Design System
+   Apple-inspired glassmorphism with animated everything
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root {
+  /* ── Neutral Dark · Teal accent ── */
+  --color-gold-rgb:         45, 212, 191;
+  --color-indigo-rgb:       100, 160, 220;
+  --color-brand-purple-rgb: 45, 212, 191;
+
+  --color-bg:               #0a0a0a;
+  --color-surface:          rgba(255, 255, 255, 0.04);
+  --color-surface-2:        rgba(255, 255, 255, 0.02);
+  --color-surface-solid:    #111111;
+
+  --color-gold:             #2dd4bf;
+  --color-gold-light:       #5eead4;
+  --color-gold-dim:         rgba(var(--color-gold-rgb), 0.10);
+  --color-gold-glow:        rgba(var(--color-gold-rgb), 0.18);
+  --color-gold-border:      rgba(var(--color-gold-rgb), 0.28);
+
+  --color-indigo:           #64a0dc;
+  --color-indigo-dim:       rgba(var(--color-indigo-rgb), 0.10);
+  --color-indigo-glow:      rgba(var(--color-indigo-rgb), 0.18);
+  --color-indigo-light:     #93c5fd;
+  --color-orange:           #fb923c;
+  --color-pink:             #f472b6;
+  --color-success:          #34d399;
+  --color-success-dim:      rgba(16, 185, 129, 0.12);
+  --color-warning:          #fbbf24;
+  --color-warning-dim:      rgba(245, 158, 11, 0.12);
+
+  --color-text:             #e8e8e8;
+  --color-text-primary:     #e8e8e8;
+  --color-text-muted:       #9a9a9a;
+  --color-text-faint:       #5a5a5a;
+  --color-bg-dark:          #0a0a0a;
+
+  --glass-bg:               rgba(255, 255, 255, 0.04);
+  --glass-bg-hover:         rgba(255, 255, 255, 0.06);
+  --glass-border:           rgba(255, 255, 255, 0.08);
+  --glass-border-hover:     rgba(255, 255, 255, 0.14);
+  --glass-border-gold:      rgba(var(--color-gold-rgb), 0.30);
+  --glass-shadow:           0 4px 24px rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06);
+  --glass-shadow-hover:     0 12px 40px rgba(0,0,0,0.65), 0 2px 8px rgba(var(--color-gold-rgb),0.10), inset 0 1px 0 rgba(255,255,255,0.10);
+  --glass-blur:             blur(32px) saturate(150%);
+  --glass-blur-heavy:       blur(44px) saturate(180%);
+
+  --color-card-bg:          var(--glass-bg);
+  --color-card-border:      var(--glass-border);
+  --color-card-hover:       var(--glass-bg-hover);
+  --color-border:           var(--glass-border);
+
+  --gradient-brand:         linear-gradient(135deg, #2dd4bf 0%, #64a0dc 100%);
+  --gradient-gold:          linear-gradient(135deg, #2dd4bf 0%, #14b8a6 100%);
+  --gradient-orb-indigo:    radial-gradient(ellipse at center, rgba(var(--color-gold-rgb), 0.10) 0%, transparent 70%);
+  --gradient-orb-gold:      radial-gradient(ellipse at center, rgba(var(--color-indigo-rgb), 0.07) 0%, transparent 70%);
+  --gradient-orb-pink:      radial-gradient(ellipse at center, rgba(var(--color-gold-rgb), 0.06) 0%, transparent 70%);
+
+  --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  --font-body:    'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', 'SF Mono', monospace;
+
+  --spring-smooth:  all 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  --spring-fast:    all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  --spring-snappy:  all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-smooth: var(--spring-smooth);
+  --transition-fast:   var(--spring-fast);
+
+  --orb-color-1:            #1a2e2b;
+  --orb-opacity-1:          0.06;
+  --orb-color-2:            #1a2530;
+  --orb-opacity-2:          0.08;
+  --orb-color-3:            #182428;
+  --orb-opacity-3:          0.06;
+  --orb-color-4:            #1c2226;
+  --orb-opacity-4:          0.05;
+
+  --scene-gradient-1:       radial-gradient(ellipse 80% 80% at 50% -10%, rgba(15, 25, 25, 0.4), transparent);
+  --scene-gradient-2:       radial-gradient(ellipse 70% 70% at 86% 74%, rgba(12, 20, 28, 0.3), transparent);
+
+  --card-glow-indigo:       rgba(var(--color-gold-rgb), 0.10);
+  --card-glow-gold:         rgba(var(--color-indigo-rgb), 0.08);
+  --glass-glow-indigo-hover: 0 0 28px rgba(var(--color-gold-rgb), 0.14);
+  --glass-glow-gold-hover:   0 0 28px rgba(var(--color-indigo-rgb), 0.12);
+}
+
+/* ============================================================
+   LIGHT THEME OVERRIDES
+   ============================================================ */
+body.light-theme {
+  --color-gold-rgb:         15, 118, 110;
+  --color-indigo-rgb:       37, 99, 235;
+  --color-brand-purple-rgb: 15, 118, 110;
+
+  --color-bg:               #f6f8fb;
+  --color-surface:          #ffffff;
+  --color-surface-2:        #f1f5f9;
+  --color-surface-solid:    #ffffff;
+
+  --color-gold:             #0f766e;
+  --color-gold-light:       #0d9488;
+  --color-gold-dim:         rgba(var(--color-gold-rgb), 0.09);
+  --color-gold-glow:        rgba(var(--color-gold-rgb), 0.16);
+  --color-gold-border:      rgba(var(--color-gold-rgb), 0.30);
+
+  --color-indigo:           #2563eb;
+  --color-indigo-dim:       rgba(var(--color-indigo-rgb), 0.08);
+  --color-indigo-glow:      rgba(var(--color-indigo-rgb), 0.14);
+  --color-indigo-light:     #1d4ed8;
+
+  --color-text:             #111827;
+  --color-text-primary:     #111827;
+  --color-text-muted:       #4b5563;
+  --color-text-faint:       #6b7280;
+  --color-bg-dark:          #f6f8fb;
+
+  --glass-bg:               #ffffff;
+  --glass-bg-hover:         #f8fafc;
+  --glass-border:           #d8e0ea;
+  --glass-border-hover:     #b8c4d3;
+  --glass-border-gold:      rgba(var(--color-gold-rgb), 0.34);
+  --glass-shadow:           0 1px 2px rgba(15, 23, 42, 0.06), 0 16px 36px rgba(15, 23, 42, 0.07);
+  --glass-shadow-hover:     0 2px 4px rgba(15, 23, 42, 0.08), 0 22px 44px rgba(15, 23, 42, 0.10);
+  --glass-blur:             none;
+  --glass-blur-heavy:       none;
+  --color-card-bg:          var(--glass-bg);
+  --color-card-border:      var(--glass-border);
+
+  --color-success:          #047857;
+  --color-warning:          #b45309;
+
+  --orb-color-1:            #dbeafe;
+  --orb-opacity-1:          0.16;
+  --orb-color-2:            #ccfbf1;
+  --orb-opacity-2:          0.14;
+  --orb-color-3:            #e2e8f0;
+  --orb-opacity-3:          0.18;
+  --orb-color-4:            #f8fafc;
+  --orb-opacity-4:          0.28;
+
+  --scene-gradient-1:       radial-gradient(ellipse 80% 60% at 42% -18%, rgba(15, 118, 110, 0.08), transparent 62%);
+  --scene-gradient-2:       radial-gradient(ellipse 68% 72% at 95% 20%, rgba(37, 99, 235, 0.06), transparent 60%);
+
+  --card-glow-indigo:       rgba(var(--color-gold-rgb), 0.08);
+  --card-glow-gold:         rgba(var(--color-indigo-rgb), 0.06);
+  --glass-glow-indigo-hover: 0 12px 28px rgba(var(--color-gold-rgb), 0.10);
+  --glass-glow-gold-hover:   0 12px 28px rgba(var(--color-indigo-rgb), 0.08);
+
+  --gradient-brand:         linear-gradient(135deg, #0f766e 0%, #2563eb 100%);
+  --gradient-gold:          linear-gradient(135deg, #0f766e 0%, #0d9488 100%);
+}
+
+/* Light theme component overrides */
+body.light-theme .dashboard-header {
+  background: rgba(255, 255, 255, 0.90);
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+body.light-theme .sidebar {
+  background: rgba(250, 250, 250, 0.98);
+  border-right-color: rgba(0, 0, 0, 0.06);
+}
+body.light-theme .user-profile { border-top-color: rgba(var(--color-gold-rgb), 0.08); }
+body.light-theme .card-plan { background: rgba(var(--color-gold-rgb),0.04); border-color: rgba(var(--color-gold-rgb),0.12); }
+body.light-theme .nav-item:hover { background: rgba(var(--color-gold-rgb), 0.05); }
+body.light-theme .nav-item.active { background: var(--color-gold-dim); }
+body.light-theme .view-filter-bar { border-bottom-color: rgba(var(--color-gold-rgb), 0.08); }
+body.light-theme .filter-tab:hover { background: rgba(var(--color-gold-rgb), 0.04); }
+body.light-theme .data-table th { background: rgba(var(--color-gold-rgb),0.03); border-bottom-color: rgba(var(--color-gold-rgb),0.08); }
+body.light-theme .data-table td { border-bottom-color: rgba(var(--color-gold-rgb),0.05); }
+body.light-theme .data-table tbody tr:hover { background: rgba(var(--color-gold-rgb),0.03); }
+body.light-theme .pipeline-flow { background: rgba(var(--color-gold-rgb),0.04); }
+body.light-theme .job-card-footer { border-top-color: rgba(var(--color-gold-rgb),0.07); }
+body.light-theme .btn-submit { color: #ffffff; }
+body.light-theme .icon-purple { background: rgba(var(--color-gold-rgb), 0.08); color: #0f766e; }
+body.light-theme .icon-orange { background: rgba(251, 146, 60, 0.08); color: #c2410c; }
+body.light-theme .icon-blue   { background: rgba(var(--color-indigo-rgb), 0.08); color: #2563eb; }
+body.light-theme .icon-green  { background: rgba(52, 211, 153, 0.08); color: #047857; }
+body.light-theme .badge-role { background: rgba(var(--color-gold-rgb),0.06); border-color: rgba(var(--color-gold-rgb),0.16); color: #0f766e; }
+body.light-theme .badge-role.recruiter { background: rgba(var(--color-indigo-rgb),0.06); border-color: rgba(var(--color-indigo-rgb),0.16); color: #2563eb; }
+body.light-theme .badge-role.interviewer { background: rgba(52,211,153,0.06); border-color: rgba(52,211,153,0.15); color: #047857; }
+body.light-theme .orb-indigo { opacity: 0.12; }
+body.light-theme .orb-gold   { opacity: 0.10; }
+body.light-theme .orb-pink   { opacity: 0.08; }
+body.light-theme .terminal-box { background: rgba(8,10,20,0.92) !important; }
+body.light-theme .terminal-box .term-log { color: #a3a3a3; }
+body.light-theme .terminal-box .term-log code { color: #2dd4bf; }
+body.light-theme .kanban-column { background: rgba(245,245,245,0.80); border-color: rgba(0,0,0,0.06); }
+body.light-theme .kanban-card { background: rgba(255,255,255,0.90); border-color: rgba(0,0,0,0.08); }
+body.light-theme .spotlight-box { background: rgba(255,255,255,0.96); border-color: rgba(var(--color-gold-rgb),0.10); box-shadow: 0 30px 80px rgba(0,0,0,0.10); }
+body.light-theme .bar-outer { background: rgba(var(--color-gold-rgb),0.08); }
+body.light-theme .waveform-box { background: rgba(var(--color-gold-rgb),0.03); }
+body.light-theme ::-webkit-scrollbar-thumb { background: rgba(var(--color-gold-rgb),0.20); }
+body.light-theme ::-webkit-scrollbar-thumb:hover { background: #0d9488; }
+body.light-theme .ra-score-ring {
+  background: conic-gradient(
+    rgba(var(--color-gold-rgb), 0.9) calc(var(--score) * 1%),
+    rgba(var(--color-gold-rgb), 0.10) 0
+  );
+}
+

@@ -1,0 +1,226 @@
+/* ============================================================
+   GLASS CARD BASE
+   ============================================================ */
+.card-glass {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+}
+
+/* ============================================================
+   JOBS CARDS GRID
+   ============================================================ */
+.jobs-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+  gap: 20px;
+}
+
+.job-card {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  transition: var(--spring-smooth);
+  box-shadow: var(--glass-shadow);
+  position: relative;
+  overflow: visible;
+}
+.job-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  pointer-events: none;
+}
+.job-card:hover {
+  border-color: var(--glass-border-gold);
+  box-shadow: var(--glass-shadow-hover), var(--glass-glow-gold-hover);
+}
+
+.job-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.job-card-header-actions { display: flex; align-items: center; gap: 8px; position: relative; }
+.btn-job-kebab {
+  background: none; border: none; color: var(--color-text-faint); cursor: pointer;
+  padding: 4px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s ease, color 0.2s ease;
+  opacity: 0;
+}
+.job-card:hover .btn-job-kebab { opacity: 1; }
+.btn-job-kebab:hover { background: rgba(255,255,255,0.06); color: var(--color-text-primary); }
+.job-kebab-dropdown {
+  position: absolute; top: 100%; right: 0; margin-top: 6px; z-index: 120;
+  min-width: 200px; padding: 6px 0; border-radius: 10px;
+  background: var(--glass-bg-solid, #1a1a2e); border: 1px solid var(--glass-border);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04) inset;
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  opacity: 0; visibility: hidden; transform: translateY(-6px) scale(0.97);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+}
+.job-kebab-dropdown.open { opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
+.kebab-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 14px;
+  background: none; border: none; color: var(--color-text-secondary); font-size: 0.82rem;
+  font-family: var(--font-body); cursor: pointer; text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.kebab-item:hover { background: rgba(255,255,255,0.05); color: var(--color-text-primary); }
+.kebab-item svg { stroke: var(--color-text-faint); flex-shrink: 0; transition: stroke 0.15s ease; }
+.kebab-item:hover svg { stroke: var(--color-gold); }
+.kebab-item-danger { color: var(--color-error, #ef4444); }
+.kebab-item-danger svg { stroke: var(--color-error, #ef4444); }
+.kebab-item-danger:hover { background: rgba(239,68,68,0.08); color: var(--color-error, #ef4444); }
+.kebab-item-danger:hover svg { stroke: var(--color-error, #ef4444); }
+.kebab-divider { height: 1px; margin: 4px 10px; background: var(--glass-border); }
+.job-card-title-area { display: flex; flex-direction: column; gap: 4px; }
+.job-title { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; letter-spacing: -0.01em; }
+.job-meta-pill {
+  font-size: 0.78rem;
+  background: var(--color-gold-dim);
+  border: 1px solid var(--glass-border-gold);
+  color: var(--color-gold);
+  border-radius: 6px;
+  padding: 3px 8px;
+  align-self: flex-start;
+}
+.status-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.status-badge.published { background: var(--color-success-dim); border: 1px solid rgba(16,185,129,0.2); color: var(--color-success); }
+.status-badge.draft { background: var(--color-warning-dim); border: 1px solid rgba(245,158,11,0.2); color: var(--color-warning); }
+.status-badge-dot { width: 6px; height: 6px; border-radius: 50%; animation: pulse-dot 2s ease-in-out infinite; }
+.status-badge.published .status-badge-dot { background-color: var(--color-success); }
+.status-badge.draft .status-badge-dot { background-color: var(--color-warning); animation: none; }
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.6; transform: scale(1.3); }
+}
+
+.job-card-details { display: flex; flex-direction: column; gap: 8px; font-size: 0.88rem; color: var(--color-text-muted); }
+.detail-item { display: flex; align-items: center; gap: 8px; }
+.detail-item svg { stroke: var(--color-text-faint); }
+
+.pipeline-flow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0,0,0,0.18);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 12px;
+}
+.pipeline-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.01);
+  border: 1px solid transparent;
+  min-width: 80px;
+  transition: var(--spring-fast);
+}
+.pipeline-step:hover { }
+.pipeline-step.step-total   { border-color: rgba(168,85,247,0.22); background: rgba(168,85,247,0.04); }
+.pipeline-step.step-resume  { border-color: rgba(251,146,60,0.22); background: rgba(251,146,60,0.04); }
+.pipeline-step.step-screening { border-color: rgba(var(--color-indigo-rgb),0.22); background: rgba(var(--color-indigo-rgb),0.04); }
+.pipeline-step.step-functional { border-color: rgba(52,211,153,0.22); background: rgba(52,211,153,0.04); }
+.step-label { font-size: 0.72rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.02em; }
+.step-val { font-family: var(--font-display); font-weight: 800; font-size: 1.1rem; }
+.step-total .step-val    { color: #c084fc; }
+.step-resume .step-val   { color: #fb923c; }
+.step-screening .step-val { color: #38bdf8; }
+.step-functional .step-val { color: #34d099; }
+.pipeline-arrow { color: var(--color-text-faint); font-size: 1.1rem; }
+
+.job-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--glass-border);
+  padding-top: 16px;
+  font-size: 0.85rem;
+}
+.author-info { display: flex; align-items: center; gap: 8px; }
+.author-tag {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--color-gold-dim);
+  color: var(--color-gold);
+  border: 1px solid var(--glass-border-gold);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.75rem; font-weight: 700;
+}
+.author-meta { color: var(--color-text-muted); }
+.author-link-doc { text-decoration: none; color: var(--color-text-muted); transition: var(--spring-fast); }
+.author-link-doc:hover { color: var(--color-gold-light); }
+.link-action-dropdown {
+  color: var(--color-gold);
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: var(--spring-fast);
+}
+.link-action-dropdown:hover { color: var(--color-gold-light); transform: translateX(2px); }
+
+/* Kanban */
+.kanban-board-container { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 12px; }
+.kanban-column {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  min-width: 280px;
+  padding: 16px;
+  flex-shrink: 0;
+  box-shadow: var(--glass-shadow);
+}
+.kanban-col-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--glass-border);
+  margin-bottom: 14px;
+}
+.kanban-cards-list { display: flex; flex-direction: column; gap: 10px; }
+.kanban-card {
+  background: var(--glass-bg-hover);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 14px;
+  cursor: pointer;
+  transition: var(--spring-fast);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.kanban-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--glass-shadow-hover), var(--glass-glow-gold-hover);
+  border-color: var(--glass-border-gold);
+}
+.kanban-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+.kanban-card-name { font-weight: 600; font-size: 0.88rem; }
+.kanban-card-score { font-family: var(--font-display); font-weight: 800; font-size: 0.9rem; color: var(--color-gold); }
+.kanban-card-role { font-size: 0.78rem; color: var(--color-text-muted); margin-bottom: 10px; }
+.kanban-card-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--glass-border); padding-top: 8px; font-size: 0.78rem; color: var(--color-text-muted); }
+
