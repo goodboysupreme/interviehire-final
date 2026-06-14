@@ -1,11 +1,14 @@
 import { prisma } from '../lib/prisma.js';
 import { callDeepSeekJson } from './deepseek.service.js';
+import { getEffectiveQuestions } from './effective-questions.js';
 import { pairAnsweredEvalQuestions } from '@interviehire/shared';
 import {
   aggregateCandidateReport,
   buildAnswerEvaluationPrompt,
   validateResponseEvaluation,
   type CandidateResponseInput,
+  type DimensionScore,
+  type EvaluationConfidence,
   type EvaluationPoint,
   type ExpectedRedFlag,
   type InterviewContext,
@@ -37,6 +40,17 @@ type ParsedGuidance = {
 
 const EVALUATION_CONCURRENCY = 3;
 
+// Multi-judge consensus: grade each answer JUDGE_COUNT times and take the median
+// per dimension to damp LLM scoring noise (self-consistency). A slightly higher
+// temperature gives the judges genuine sampling variance to vote over. Set
+// DEEPSEEK_JUDGE_COUNT=1 to restore single-pass grading.
+const JUDGE_COUNT = Math.max(1, Math.min(5, Math.round(Number(process.env.DEEPSEEK_JUDGE_COUNT || 3))));
+const JUDGE_TEMPERATURE = Number(process.env.DEEPSEEK_JUDGE_TEMPERATURE || 0.35);
+const SINGLE_JUDGE_TEMPERATURE = 0.1;
+// Inter-judge overallScore spread (max-min) above this means the judges disagree
+// materially, so we downgrade the answer's confidence one notch.
+const JUDGE_DISAGREEMENT_SPREAD = 20;
+
 const VALID_QUESTION_TYPES = new Set<QuestionType>([
   'technical_theory',
   'coding',
@@ -66,7 +80,7 @@ export async function evaluateInterviewWithAviral(sessionId: string): Promise<an
   if (!session) throw new Error('Session not found');
 
   const transcript = normalizeTranscript(session.transcript);
-  const questions = session.jobRole.questions as QuestionWithGuidance[];
+  const questions = getEffectiveQuestions(session) as unknown as QuestionWithGuidance[];
 
   const context: InterviewContext = {
     interviewId: session.id,
@@ -148,31 +162,43 @@ async function evaluateInputsWithDeepSeek(
     return [];
   }
 
-  const evaluations: ResponseEvaluation[] = [];
+  // Flatten every (answer × judge) grading into a single task queue so total
+  // in-flight DeepSeek calls stay bounded by EVALUATION_CONCURRENCY no matter how
+  // many judges are configured. Judgments are collected per answer, then merged.
+  const tasks: number[] = [];
+  inputs.forEach((_, inputIndex) => {
+    for (let judge = 0; judge < JUDGE_COUNT; judge += 1) tasks.push(inputIndex);
+  });
+  const temperature = JUDGE_COUNT > 1 ? JUDGE_TEMPERATURE : SINGLE_JUDGE_TEMPERATURE;
+
+  const judgments: ResponseEvaluation[][] = inputs.map(() => []);
   let cursor = 0;
 
   const worker = async (): Promise<void> => {
-    while (cursor < inputs.length) {
-      const currentIndex = cursor;
+    while (cursor < tasks.length) {
+      const inputIndex = tasks[cursor];
       cursor += 1;
-      const input = inputs[currentIndex];
-      const evaluation = await evaluateSingleInput(context, input);
+      const evaluation = await evaluateSingleInput(context, inputs[inputIndex], temperature);
 
       if (evaluation) {
-        evaluations.push(evaluation);
+        judgments[inputIndex].push(evaluation);
       }
     }
   };
 
-  const workerCount = Math.min(EVALUATION_CONCURRENCY, inputs.length);
+  const workerCount = Math.min(EVALUATION_CONCURRENCY, tasks.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
-  return evaluations;
+  // Preserve original answer order; drop answers where every judge failed.
+  return judgments
+    .filter((judges) => judges.length > 0)
+    .map((judges) => (judges.length === 1 ? judges[0] : mergeEvaluationsByMedian(judges)));
 }
 
 async function evaluateSingleInput(
   context: InterviewContext,
   input: CandidateResponseInput,
+  temperature: number = SINGLE_JUDGE_TEMPERATURE,
 ): Promise<ResponseEvaluation | null> {
   try {
     const prompt = buildAnswerEvaluationPrompt(context, input);
@@ -181,7 +207,7 @@ async function evaluateSingleInput(
         'You are a rigorous, fair technical interview evaluator. Return strict JSON exactly matching the requested ResponseEvaluation schema.',
       prompt,
       maxOutputTokens: Number(process.env.DEEPSEEK_EVALUATION_MAX_TOKENS || 12000),
-      temperature: 0.1,
+      temperature,
     });
 
     const result = validateResponseEvaluation({
@@ -196,6 +222,103 @@ async function evaluateSingleInput(
     console.error(`Aviral evaluation failed for answer ${input.answerId}. Skipping.`, error);
     return null;
   }
+}
+
+// ── Multi-judge consensus merge ────────────────────────────────────────────────
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
+// Returns the item whose numeric key is nearest the target (ties keep the first).
+function pickClosest<T>(items: T[], key: (item: T) => number, target: number): T {
+  return items.reduce((best, item) =>
+    Math.abs(key(item) - target) < Math.abs(key(best) - target) ? item : best,
+  );
+}
+
+function uniqueStrings(values: string[], cap: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = (value || '').trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+function downgradeConfidence(confidence: EvaluationConfidence): EvaluationConfidence {
+  return confidence === 'high' ? 'medium' : 'low';
+}
+
+function severityRank(severity: RedFlagSeverity): number {
+  return severity === 'critical' ? 3 : severity === 'high' ? 2 : severity === 'medium' ? 1 : 0;
+}
+
+// Combine N independent judgments of one answer into a consensus evaluation:
+// median per-dimension and overall scores, evidence drawn from the judge nearest
+// each median, red flags kept only on majority agreement, and confidence reduced
+// when the judges disagree widely. Narrative fields come from the median judge.
+function mergeEvaluationsByMedian(judges: ResponseEvaluation[]): ResponseEvaluation {
+  const overallScores = judges.map((judge) => judge.overallScore);
+  const overallScore = median(overallScores);
+  const base = pickClosest(judges, (judge) => judge.overallScore, overallScore);
+
+  const dimensionKeys = new Set<string>();
+  judges.forEach((judge) => Object.keys(judge.dimensionScores ?? {}).forEach((key) => dimensionKeys.add(key)));
+
+  const dimensionScores: Record<string, DimensionScore> = {};
+  for (const key of dimensionKeys) {
+    const present = judges.filter((judge) => judge.dimensionScores?.[key]);
+    if (present.length === 0) continue;
+    const medianScore = median(present.map((judge) => judge.dimensionScores[key].score));
+    const source = pickClosest(present, (judge) => judge.dimensionScores[key].score, medianScore)
+      .dimensionScores[key];
+    dimensionScores[key] = { ...source, score: medianScore };
+  }
+
+  // A red flag survives only if a majority of judges raised it (kills one-off
+  // hallucinated flags). Severity = the highest any judge assigned.
+  const majority = Math.floor(judges.length / 2) + 1;
+  const flagByLabel = new Map<string, { flag: ResponseEvaluation['redFlags'][number]; count: number }>();
+  judges.forEach((judge) =>
+    (judge.redFlags ?? []).forEach((flag) => {
+      const key = (flag.label || '').trim().toLowerCase();
+      if (!key) return;
+      const existing = flagByLabel.get(key);
+      if (existing) {
+        existing.count += 1;
+        if (severityRank(flag.severity) > severityRank(existing.flag.severity)) existing.flag = flag;
+      } else {
+        flagByLabel.set(key, { flag, count: 1 });
+      }
+    }),
+  );
+  const redFlags = [...flagByLabel.values()]
+    .filter((entry) => entry.count >= majority)
+    .map((entry) => entry.flag);
+
+  const spread = Math.max(...overallScores) - Math.min(...overallScores);
+  const evaluationConfidence =
+    spread > JUDGE_DISAGREEMENT_SPREAD ? downgradeConfidence(base.evaluationConfidence) : base.evaluationConfidence;
+
+  return {
+    ...base,
+    overallScore,
+    dimensionScores,
+    redFlags,
+    strengths: uniqueStrings(judges.flatMap((judge) => judge.strengths ?? []), 6),
+    weaknesses: uniqueStrings(judges.flatMap((judge) => judge.weaknesses ?? []), 6),
+    followUpRecommendations: uniqueStrings(judges.flatMap((judge) => judge.followUpRecommendations ?? []), 5),
+    evaluationConfidence,
+  };
 }
 
 function parseEvaluationGuidance(raw: string): ParsedGuidance {
