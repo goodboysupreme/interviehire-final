@@ -135,6 +135,9 @@ body.light-theme .bs-wdot { background: rgba(0,0,0,.10); }
 .bs-cov-ico { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .bs-cov-name { font-size: 0.76rem; flex: 1; }
 .bs-cov-tag { font-size: 0.62rem; font-weight: 600; color: var(--color-text-faint); font-family: var(--font-mono); }
+.bs-cov-draft { font-size: 0.6rem; font-weight: 700; font-family: var(--font-mono); color: var(--color-gold); background: var(--color-gold-dim); border: 1px solid var(--glass-border-gold); border-radius: 6px; padding: 3px 7px; cursor: pointer; flex-shrink: 0; transition: var(--spring-fast); }
+.bs-cov-draft:hover { background: var(--color-gold); color: #1a1a1a; }
+.bs-cov-draft:disabled { opacity: .45; cursor: default; }
 
 .bs-rev-item { padding: 9px 0; border-bottom: 1px solid var(--glass-border); }
 .bs-rev-item:last-child { border-bottom: none; }

@@ -308,6 +308,33 @@ export async function generateScreeningQuestions(job, opts = {}) {
   return normalizeScreeningBlueprint(parsed);
 }
 
+// ── Gap → question: author one rubric-bearing question for an untested must-have
+function buildGapMessages(job, requirement) {
+  const system = `You are a senior interviewer. Author EXACTLY ONE functional interview question, with its grading rubric, that directly tests whether a candidate genuinely has a specific required skill. An AI avatar asks it aloud.
+
+Return ONLY JSON (no markdown), shape:
+{"prompt":"...","questionType":"${QUESTION_TYPES.join('|')}","difficulty":"Easy|Medium|Hard","estimatedMinutes":3-6,"competency":"the requirement it tests","modelAnswer":"what a strong answer covers, 2-3 sentences",${RUBRIC_SHAPE},"followUpIntent":"when/how to probe deeper"}
+
+Rules:
+- The question must concretely probe this requirement: "${requirement}".
+- prompt: ONE idea, conversational, speakable aloud — no compound multi-part questions.
+- requiredPoints: 2-4, each with 2-5 lowercase keywords the evaluator matches on, weight 1-3.
+- redFlags: 1-2 realistic failure signals.
+- No preamble.`;
+  const user = `Role: ${clean(job.roleName) || clean(job.cardName) || 'the role'}${job.experienceBand ? ` (${job.experienceBand})` : ''}
+Required skill this question must test: ${requirement}
+
+${jdContext(job)}`;
+  return [{ role: 'system', content: system }, { role: 'user', content: user }];
+}
+
+export async function generateGapQuestion(job, requirement) {
+  const parsed = await callJson(buildGapMessages(job, requirement));
+  const qb = createQuestionBlueprint({ ...parsed, competency: clean(parsed?.competency) || requirement });
+  if (!qb.prompt) throw new Error('empty gap question');
+  return qb;
+}
+
 // ── Normalization (coerce any AI/legacy payload into the contract shape) ─────
 export function normalizeFunctionalBlueprint(parsed) {
   const topics = arr(parsed?.topics).length ? parsed.topics : arr(parsed);
@@ -526,4 +553,24 @@ export function localScreeningQuestions(job) {
   qs.push(lq('Tell me about a challenging situation in a previous role and how you handled it.', 'hr_screening', 'Easy', 'Fit',
     'Gives a concrete situation and a constructive resolution.', [['Concrete situation and resolution', ['situation', 'resolved'], 2]], []));
   return { questions: qs };
+}
+
+// Keyless fallback for gap → question: a valid, requirement-targeted question
+// used when the AI proxy is unavailable so "Draft Q" always yields something.
+const REQ_STOPWORDS = ['experience', 'knowledge', 'proficiency', 'familiarity', 'equivalent', 'similar',
+  'strong', 'good', 'excellent', 'with', 'and', 'the', 'using', 'ability', 'years', 'plus'];
+function requirementKeywords(requirement) {
+  return clean(requirement).toLowerCase().split(/[^a-z0-9+#.]+/).filter((w) => w.length > 3 && !REQ_STOPWORDS.includes(w)).slice(0, 4);
+}
+
+export function localGapQuestion(job, requirement) {
+  const req = clean(requirement) || 'this skill';
+  const kw = requirementKeywords(req);
+  return lq(
+    `Tell me about your hands-on experience with ${req}. Walk me through a concrete example and your specific role in it.`,
+    'behavioral', 'Medium', req,
+    `Gives a specific, first-hand example demonstrating ${req}, including the candidate's actual role, the decisions they made, and the outcome.`,
+    [[`Concrete first-hand example of ${req}`, kw.length ? kw : ['example'], 3], ['Specific role and a measurable outcome', ['my role', 'result'], 2]],
+    [['Speaks only in generalities, gives no real example', 'medium']],
+  );
 }

@@ -13,8 +13,8 @@ import { isApiMode, apiPatchJobParameters } from './api.js';
 import {
   MODE_FUNCTIONAL, MODE_SCREENING, CONTRACT_DIFFICULTY, TOPIC_TYPES, QUESTION_TYPES, SEVERITY_LEVELS,
   migrateLegacyQuestions, emptyScreeningBlueprint, createTopic, createQuestionBlueprint, createRubricPoint, createRedFlag,
-  generateFunctionalOutline, enrichQuestionRubric, generateScreeningQuestions,
-  localFunctionalBlueprint, localScreeningQuestions,
+  generateFunctionalOutline, enrichQuestionRubric, generateScreeningQuestions, generateGapQuestion,
+  localFunctionalBlueprint, localScreeningQuestions, localGapQuestion,
   computeCoverage, computeCalibration, rubricStrength, critiqueRubric, critiqueBlueprint,
 } from './blueprint-engine.js';
 
@@ -27,6 +27,7 @@ const studioUi = {
   expandedTopicId: null,
   expandedQuestionId: null,
   generating: false,
+  draftingReq: null,
 };
 
 let dragState = null;
@@ -384,10 +385,12 @@ function coveragePanel(cov) {
     <div class="bs-insp-h">JD coverage · ${cov.length} must-have${cov.length !== 1 ? 's' : ''}</div>
     ${cov.map((c) => {
       const [color, path] = ico[c.status];
+      const drafting = studioUi.draftingReq === c.requirement;
       return `<div class="bs-cov-item">
         <span class="bs-cov-ico" style="background:${color}22;color:${color};"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="${path}"/></svg></span>
         <span class="bs-cov-name">${escapeHTML(c.requirement)}</span>
         <span class="bs-cov-tag">${c.status === 'gap' ? 'gap' : c.status === 'thin' ? 'thin' : `${c.count} Qs`}</span>
+        ${c.status !== 'ok' ? `<button class="bs-cov-draft" data-action="draft-gap" data-req="${escapeHTML(c.requirement)}" ${studioUi.generating ? 'disabled' : ''} title="Draft a question that tests this requirement">${drafting ? '…' : '+ Q'}</button>` : ''}
       </div>`;
     }).join('')}`;
 }
@@ -435,6 +438,8 @@ function bindStudio(pane, job) {
         studioUi.inspectorOpen = !studioUi.inspectorOpen; soundEngine.playClick(); reRender(); break;
       case 'inspector-tab':
         studioUi.inspectorTab = el.dataset.tab; reRender(); break;
+      case 'draft-gap':
+        await handleDraftGap(job, el.dataset.req, reRender); break;
       case 'jump-question': {
         const fb = functionalOf(job);
         const topic = (fb.topics || []).find((t) => t.questions.some((q) => q.id === qid));
@@ -588,6 +593,41 @@ function deleteQuestion(job, qid) {
   const sb = screeningOf(job);
   const j = sb.questions.findIndex((q) => q.id === qid);
   if (j >= 0) sb.questions.splice(j, 1);
+}
+
+const GAP_TOPIC_NAME = 'Coverage gaps';
+
+// Draft a single question that closes one uncovered/thin must-have, append it to
+// a dedicated "Coverage gaps" topic, and jump to it. AI-first, local fallback.
+async function handleDraftGap(job, requirement, reRender) {
+  if (!requirement || studioUi.generating) return;
+  studioUi.generating = true;
+  studioUi.draftingReq = requirement;
+  studioUi.genLabel = 'Drafting question…';
+  reRender();
+  soundEngine.playChime([392, 440], 0.1, 0.1);
+
+  let q;
+  let offline = false;
+  try { q = await generateGapQuestion(job, requirement); }
+  catch { q = localGapQuestion(job, requirement); offline = true; }
+
+  const fb = functionalOf(job);
+  let topic = fb.topics.find((t) => t.name === GAP_TOPIC_NAME);
+  if (!topic) { topic = createTopic({ name: GAP_TOPIC_NAME, type: 'Experiential' }); fb.topics.push(topic); }
+  topic.questions.push(q);
+
+  studioUi.expandedTopicId = topic.id;
+  studioUi.expandedQuestionId = q.id;
+  studioUi.generating = false;
+  studioUi.draftingReq = null;
+  studioUi.genLabel = null;
+  persist();
+  reRender();
+  showPremiumToast(offline ? `Drafted a question for “${requirement}” offline.` : `Drafted a question for “${requirement}”.`, 'success');
+  soundEngine.playChime([523.25, 659.25, 783.99], 0.18, 0.07);
+  const node = document.querySelector(`[data-q-id="${q.id}"]`);
+  if (node && node.scrollIntoView) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 async function handleGenerate(job, reRender) {
