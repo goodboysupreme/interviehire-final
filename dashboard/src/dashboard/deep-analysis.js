@@ -14,6 +14,42 @@ import { isApiMode, apiFetchCandidateReport } from './api.js';
 
 const DIMENSIONS = ['Correctness', 'Depth', 'Clarity', 'Communication', 'Role alignment'];
 
+// The evaluation engine emits a different dimension set per question type
+// (technical vs behavioral vs system_design vs coding …), so a mixed interview
+// yields a long, uneven skillScores list of raw snake_case keys. We map keys to
+// human labels, order by canonical priority (broadly-assessed core dimensions
+// first), and cap the list with a toggle — faithful to the data, just legible.
+const normKey = (k) => String(k || '').toLowerCase().replace(/\s+/g, '_');
+const DIM_LABELS = {
+  relevance: 'Relevance', correctness: 'Correctness', completeness: 'Completeness',
+  depth: 'Depth', clarity: 'Clarity', communication: 'Communication', role_alignment: 'Role alignment',
+  ownership: 'Ownership', impact: 'Impact', reflection: 'Reflection',
+  requirements_understanding: 'Requirements', architecture: 'Architecture', tradeoffs: 'Trade-offs',
+  scalability: 'Scalability', failure_handling: 'Failure handling',
+  problem_framing: 'Problem framing', analysis_quality: 'Analysis quality',
+  business_judgment: 'Business judgment', recommendation_quality: 'Recommendation',
+  discovery_quality: 'Discovery', objection_handling: 'Objection handling',
+  customer_empathy: 'Customer empathy', persuasion: 'Persuasion', structure: 'Structure',
+  motivation: 'Motivation', professionalism: 'Professionalism', risk_flags: 'Risk flags',
+  concept_coverage: 'Concept coverage', examples: 'Examples',
+  problem_understanding: 'Problem understanding', algorithm_correctness: 'Algorithm correctness',
+  edge_cases: 'Edge cases', complexity_analysis: 'Complexity analysis', code_quality: 'Code quality',
+  addressed_followup: 'Follow-up handling', depth_expansion: 'Depth expansion',
+  consistency: 'Consistency', adaptability: 'Adaptability',
+};
+// Cross-cutting dimensions lead; specialised per-type dimensions follow, ordered
+// by how many answers actually scored them (set in dimensionsSection).
+const DIM_PRIORITY = ['correctness', 'algorithm_correctness', 'completeness', 'concept_coverage',
+  'depth', 'depth_expansion', 'clarity', 'communication', 'relevance', 'role_alignment'];
+const DIM_CAP = 6;
+function prettyDim(key) {
+  const n = normKey(key);
+  if (DIM_LABELS[n]) return DIM_LABELS[n];
+  const s = n.replace(/_/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+function dimPriority(key) { const i = DIM_PRIORITY.indexOf(normKey(key)); return i === -1 ? 99 : i; }
+
 const RECO_META = {
   strong_proceed: { label: 'Strong proceed', color: '#2dd4bf' },
   proceed: { label: 'Proceed', color: '#34d399' },
@@ -124,7 +160,7 @@ export function buildSampleCandidateReport(candidate, job) {
   };
 }
 
-const daUi = { selectedId: null, openAnswerId: null };
+const daUi = { selectedId: null, openAnswerId: null, showAllDims: false };
 
 // Live (api mode) report cache: candidateId -> { state:'loading'|'ready'|'pending'|'error', report?, error? }.
 const liveReports = new Map();
@@ -274,12 +310,7 @@ function detailMarkup({ candidate, report }, allReports) {
       </div>
     </div>
 
-    <div class="da-section">
-      <h3 class="da-section-title">Evaluation dimensions</h3>
-      ${report.skillScores.map((s) => `
-        <div class="da-dim"><span class="da-dim-name">${escapeHTML(s.skill)}</span><span class="da-dim-track"><span class="da-dim-fill" style="width:${s.score}%;background:${scoreColor(s.score)};"></span></span><span class="da-dim-score">${s.score}</span></div>
-      `).join('')}
-    </div>
+    ${dimensionsSection(report.skillScores)}
 
     <div class="da-cols">
       <div class="da-section da-half">
@@ -310,6 +341,34 @@ function detailMarkup({ candidate, report }, allReports) {
       </div>` : ''}`;
 }
 
+// "Evaluation dimensions" — the engine can return 15+ raw dimensions across a
+// mixed interview. Normalise labels, rank by priority then evidence breadth then
+// score, and cap to DIM_CAP with a toggle so the list reads short and even.
+function dimensionsSection(skillScores) {
+  const dims = (skillScores || [])
+    .filter((s) => s && Number.isFinite(s.score))
+    .map((s) => ({ key: s.skill, label: prettyDim(s.skill), score: s.score, n: (s.evidenceAnswerIds || []).length }))
+    .sort((a, b) => dimPriority(a.key) - dimPriority(b.key) || b.n - a.n || b.score - a.score);
+  if (!dims.length) return '';
+
+  const overflow = dims.length - DIM_CAP;
+  const visible = daUi.showAllDims ? dims : dims.slice(0, DIM_CAP);
+  const toggle = overflow > 0
+    ? `<button class="da-dim-more" data-action="toggle-dims">${daUi.showAllDims ? 'Show fewer' : `Show all ${dims.length} dimensions`}</button>`
+    : '';
+  return `
+    <div class="da-section">
+      <h3 class="da-section-title">Evaluation dimensions<span class="da-dim-count">${dims.length}</span></h3>
+      ${visible.map(dimRow).join('')}
+      ${toggle}
+    </div>`;
+}
+
+function dimRow(d) {
+  const c = scoreColor(d.score);
+  return `<div class="da-dim"><span class="da-dim-name" title="${escapeHTML(d.label)}">${escapeHTML(d.label)}</span><span class="da-dim-track"><span class="da-dim-fill" style="width:${d.score}%;background:${c};"></span></span><span class="da-dim-score" style="color:${c};">${d.score}</span></div>`;
+}
+
 function answerCard(r) {
   const open = daUi.openAnswerId === r.answerId;
   const c = scoreColor(r.overallScore);
@@ -326,7 +385,10 @@ function answerCard(r) {
     ${open ? `
       <div class="da-ans-body">
         <div class="da-dim-grid">
-          ${Object.entries(r.dimensionScores).map(([d, v]) => `<div class="da-dim-mini"><span>${escapeHTML(d)}</span><b style="color:${scoreColor(v.score)};">${v.score}</b></div>`).join('')}
+          ${Object.entries(r.dimensionScores)
+            .map(([d, v]) => ({ key: d, label: prettyDim(d), score: v.score }))
+            .sort((a, b) => dimPriority(a.key) - dimPriority(b.key) || b.score - a.score)
+            .map((d) => `<div class="da-dim-mini"><span title="${escapeHTML(d.label)}">${escapeHTML(d.label)}</span><b style="color:${scoreColor(d.score)};">${d.score}</b></div>`).join('')}
         </div>
         ${(mac.coveredRequiredPoints || []).length || (mac.missedRequiredPoints || []).length ? `
           <div class="da-mac">
@@ -343,13 +405,14 @@ function bind(container, job) {
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const action = el.dataset.action;
-    if (action === 'select') { daUi.selectedId = el.dataset.cid; daUi.openAnswerId = null; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
-    else if (action === 'back') { daUi.selectedId = null; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
+    if (action === 'select') { daUi.selectedId = el.dataset.cid; daUi.openAnswerId = null; daUi.showAllDims = false; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
+    else if (action === 'back') { daUi.selectedId = null; daUi.showAllDims = false; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'toggle-answer') { const a = el.dataset.aid; daUi.openAnswerId = daUi.openAnswerId === a ? null : a; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
+    else if (action === 'toggle-dims') { daUi.showAllDims = !daUi.showAllDims; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
   };
   container.onkeydown = (e) => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('da-row')) {
-      e.preventDefault(); daUi.selectedId = e.target.dataset.cid; daUi.openAnswerId = null; renderDeepAnalysisPane(job, container);
+      e.preventDefault(); daUi.selectedId = e.target.dataset.cid; daUi.openAnswerId = null; daUi.showAllDims = false; renderDeepAnalysisPane(job, container);
     }
   };
 }

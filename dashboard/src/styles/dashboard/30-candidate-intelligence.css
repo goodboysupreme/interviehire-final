@@ -70,11 +70,14 @@ body.light-theme .da-ring { background: conic-gradient(var(--c) calc(var(--p) * 
 .da-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
 .da-dim { display: flex; align-items: center; gap: 11px; padding: 6px 0; }
-.da-dim-name { font-size: 0.78rem; color: var(--color-text-muted); width: 112px; flex-shrink: 0; }
+.da-dim-name { font-size: 0.78rem; color: var(--color-text-muted); width: 148px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .da-dim-track { flex: 1; height: 7px; background: rgba(255,255,255,.07); border-radius: 4px; overflow: hidden; }
 body.light-theme .da-dim-track { background: rgba(0,0,0,.06); }
 .da-dim-fill { height: 100%; border-radius: 4px; transition: var(--spring-smooth); }
 .da-dim-score { font-family: var(--font-mono); font-size: 0.74rem; font-weight: 600; width: 26px; text-align: right; }
+.da-dim-count { font-family: var(--font-mono); font-size: 0.62rem; font-weight: 600; color: var(--color-text-faint); background: var(--color-surface-2); border: 1px solid var(--glass-border); border-radius: 20px; padding: 1px 7px; margin-left: 2px; }
+.da-dim-more { margin-top: 9px; font-size: 0.72rem; font-weight: 600; color: var(--color-text-muted); background: none; border: none; cursor: pointer; padding: 4px 0; transition: color var(--duration-fast, 150ms) ease; }
+.da-dim-more:hover { color: var(--color-gold); }
 
 .da-li { font-size: 0.8rem; line-height: 1.45; padding: 7px 11px; border-radius: 9px; margin-bottom: 6px; border-left: 2px solid transparent; }
 .da-li.ok { background: rgba(52,211,153,.08); border-left-color: #34d399; }
@@ -100,7 +103,7 @@ body.light-theme .da-dim-track { background: rgba(0,0,0,.06); }
 .da-ans-body { padding: 0 13px 13px; animation: bs-reveal .25s var(--ease, ease); }
 .da-dim-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 7px; margin-bottom: 11px; }
 .da-dim-mini { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; background: var(--color-surface-2); border: 1px solid var(--glass-border); border-radius: 9px; }
-.da-dim-mini span { font-size: 0.62rem; color: var(--color-text-faint); }
+.da-dim-mini span { font-size: 0.62rem; color: var(--color-text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .da-dim-mini b { font-family: var(--font-mono); font-size: 0.95rem; }
 .da-mac { display: flex; flex-direction: column; gap: 5px; margin-bottom: 11px; }
 .da-mac-row { display: flex; align-items: flex-start; gap: 7px; font-size: 0.76rem; line-height: 1.4; }
