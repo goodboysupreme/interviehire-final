@@ -15,7 +15,7 @@ import {
   migrateLegacyQuestions, emptyScreeningBlueprint, createTopic, createQuestionBlueprint, createRubricPoint, createRedFlag,
   generateFunctionalOutline, enrichQuestionRubric, generateScreeningQuestions,
   localFunctionalBlueprint, localScreeningQuestions,
-  computeCoverage, computeCalibration, rubricStrength,
+  computeCoverage, computeCalibration, rubricStrength, critiqueRubric, critiqueBlueprint,
 } from './blueprint-engine.js';
 
 // Shared mutable UI state — imported bindings are read-only, so studio view
@@ -238,6 +238,13 @@ function strengthBadge(q) {
   return `<span class="bs-qchip" style="color:${c};border-color:${c}40;background:${c}14;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 5-3.5 7.5-8.5 9C7.5 19.5 4 17 4 12V5l8.5-3L21 5z"/></svg> ${label}</span>`;
 }
 
+function reviewBadge(q) {
+  const n = critiqueRubric(q).length;
+  if (!n) return '';
+  const c = '#fb923c';
+  return `<span class="bs-qchip" style="color:${c};border-color:${c}40;background:${c}14;" title="${n} rubric issue${n !== 1 ? 's' : ''} — open the Review tab"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ${n}</span>`;
+}
+
 function questionMarkup(q) {
   const open = studioUi.expandedQuestionId === q.id;
   const tt = tint(TYPE_TINT, q.questionType);
@@ -251,6 +258,7 @@ function questionMarkup(q) {
           <span class="bs-qchip type" style="color:${tt};border-color:${tt}40;background:${tt}14;">${escapeHTML(q.questionType)}</span>
           <span class="bs-qchip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${q.estimatedMinutes} min</span>
           ${strengthBadge(q)}
+          ${reviewBadge(q)}
         </div>
       </div>
     </div>
@@ -339,16 +347,34 @@ function emptyState(title, desc) {
 
 // ── Inspector (one section at a time) ────────────────────────────────────────
 function inspectorMarkup(job, fb, cov, cal) {
-  const tabs = [['coverage', 'Coverage'], ['preview', 'Preview'], ['calibrate', 'Calibrate']];
+  const issueCount = critiqueBlueprint(fb).reduce((a, x) => a + x.issues.length, 0);
+  const tabs = [['coverage', 'Coverage'], ['review', issueCount ? `Review · ${issueCount}` : 'Review'], ['preview', 'Preview'], ['calibrate', 'Calibrate']];
   return `
     <div class="bs-panel">
       <div class="bs-seg">
         ${tabs.map(([k, label]) => `<button class="bs-seg-btn ${studioUi.inspectorTab === k ? 'active' : ''}" data-action="inspector-tab" data-tab="${k}">${label}</button>`).join('')}
       </div>
       ${studioUi.inspectorTab === 'coverage' ? coveragePanel(cov)
+        : studioUi.inspectorTab === 'review' ? reviewPanel(fb)
         : studioUi.inspectorTab === 'preview' ? previewPanel(job, fb)
         : calibratePanel(cal)}
     </div>`;
+}
+
+// Rubric critic surfaced as a punch-list: jump straight to a flagged question.
+function reviewPanel(fb) {
+  const flagged = critiqueBlueprint(fb);
+  if (!flagged.length) {
+    return `<div class="bs-insp-h">Rubric review</div><p class="bs-faint" style="font-size:12px;line-height:1.5;">No rubric issues found. Required points look measurable, red flags realistic, and model answers fit their difficulty.</p>`;
+  }
+  const total = flagged.reduce((a, x) => a + x.issues.length, 0);
+  return `
+    <div class="bs-insp-h">Rubric review · ${total} issue${total !== 1 ? 's' : ''} · ${flagged.length} question${flagged.length !== 1 ? 's' : ''}</div>
+    ${flagged.map((x) => `
+      <div class="bs-rev-item">
+        <button class="bs-rev-q" data-action="jump-question" data-q-id="${x.questionId}">${escapeHTML(x.prompt) || 'Untitled question'}</button>
+        ${x.issues.map((i) => `<div class="bs-rev-issue ${i.level}"><span class="bs-rev-dot"></span><span>${escapeHTML(i.message)}</span></div>`).join('')}
+      </div>`).join('')}`;
 }
 
 function coveragePanel(cov) {
@@ -409,6 +435,17 @@ function bindStudio(pane, job) {
         studioUi.inspectorOpen = !studioUi.inspectorOpen; soundEngine.playClick(); reRender(); break;
       case 'inspector-tab':
         studioUi.inspectorTab = el.dataset.tab; reRender(); break;
+      case 'jump-question': {
+        const fb = functionalOf(job);
+        const topic = (fb.topics || []).find((t) => t.questions.some((q) => q.id === qid));
+        if (topic) studioUi.expandedTopicId = topic.id;
+        studioUi.expandedQuestionId = qid;
+        soundEngine.playClick();
+        reRender();
+        const node = document.querySelector(`[data-q-id="${qid}"]`);
+        if (node && node.scrollIntoView) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        break;
+      }
       case 'toggle-topic': {
         const tid = el.dataset.topicId;
         studioUi.expandedTopicId = studioUi.expandedTopicId === tid ? null : tid;

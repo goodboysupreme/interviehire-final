@@ -98,6 +98,80 @@ export function rubricStrength(qb) {
   return 'missing';
 }
 
+// ── Rubric quality critic ────────────────────────────────────────────────────
+// A second pass over an authored question that flags rubric problems an LLM
+// evaluator can't grade well: unmeasurable required points, unrealistic or
+// over-eager red flags, and model answers mismatched to the question's
+// difficulty. Pure heuristics (no AI) so it runs live as the recruiter edits.
+const VAGUE_TERMS = ['good', 'great', 'nice', 'strong', 'solid', 'well', 'properly', 'appropriate',
+  'appropriately', 'correctly', 'understands', 'understanding', 'familiar', 'familiarity', 'aware',
+  'reasonable', 'clearly', 'effective', 'effectively', 'quality', 'as expected'];
+const ATTITUDE_TERMS = ['attitude', 'passion', 'passionate', 'enthusiasm', 'enthusiastic', 'culture fit',
+  'team player', 'positive', 'energy', 'likeable', 'likable', 'friendly'];
+
+function pointIssue(p) {
+  const desc = clean(p.description);
+  const lower = desc.toLowerCase();
+  const words = lower.split(/\s+/).filter(Boolean);
+  const hasKeywords = arr(p.keywords).filter(Boolean).length > 0;
+  if (!desc) return 'Empty required point — nothing for the evaluator to grade.';
+  if (ATTITUDE_TERMS.some((t) => lower.includes(t))) return `“${desc}” is attitudinal — not measurable from a transcript.`;
+  if (words.length < 3 && !hasKeywords) return `“${desc}” is too vague to grade — add specifics or keywords.`;
+  const vagueHits = VAGUE_TERMS.filter((t) => lower.includes(t)).length;
+  if (words.length <= 5 && vagueHits >= 1 && !hasKeywords) return `“${desc}” reads vague — name a concrete thing the answer must contain.`;
+  return null;
+}
+
+function flagIssue(f, qb) {
+  const desc = clean(f.description);
+  const lower = desc.toLowerCase();
+  if (!desc) return 'Empty red flag.';
+  if (lower.split(/\s+/).filter(Boolean).length < 3) return `Red flag “${desc}” is too vague to detect reliably.`;
+  // critical severity should be reserved for integrity/safety signals, not a
+  // routine weak answer — implausible on an easy or soft-skill question.
+  if (f.severity === 'critical' && (qb.difficulty === 'Easy' || qb.questionType === 'behavioral' || qb.questionType === 'hr_screening')) {
+    return `“${desc}” marked critical on an ${qb.difficulty}/${qb.questionType} question — likely over-severe.`;
+  }
+  return null;
+}
+
+function modelAnswerIssues(qb) {
+  const issues = [];
+  const model = clean(qb.modelAnswer);
+  const words = model ? model.split(/\s+/).filter(Boolean).length : 0;
+  const reqCount = arr(qb.rubric?.requiredPoints).filter((p) => clean(p.description)).length;
+  if (qb.difficulty === 'Hard') {
+    if (!model) issues.push('Hard question has no model answer to grade against.');
+    else if (words < 20) issues.push('Model answer looks thin for a Hard question — expand what a strong answer covers.');
+    if (reqCount < 2) issues.push('Hard question has fewer than 2 required points — under-specified rubric.');
+  } else if (qb.difficulty === 'Easy') {
+    if (words > 80) issues.push('Model answer is long for an Easy question — it may over-expect.');
+    if (reqCount > 4) issues.push('Easy question has 5+ required points — likely over-graded.');
+  } else if (!model && reqCount < 1) {
+    issues.push('No model answer and no required points — nothing to grade against.');
+  }
+  return issues;
+}
+
+// Returns the rubric issues for one question: [{ level:'warn'|'info', kind, message }].
+export function critiqueRubric(qb) {
+  const issues = [];
+  const r = qb.rubric || {};
+  arr(r.requiredPoints).forEach((p) => { const m = pointIssue(p); if (m) issues.push({ level: 'warn', kind: 'point', message: m }); });
+  const flags = arr(r.redFlags);
+  flags.forEach((f) => { const m = flagIssue(f, qb); if (m) issues.push({ level: 'warn', kind: 'flag', message: m }); });
+  if (flags.length > 3) issues.push({ level: 'info', kind: 'flag', message: `${flags.length} red flags — keep only the few that truly disqualify.` });
+  modelAnswerIssues(qb).forEach((m) => issues.push({ level: 'warn', kind: 'model', message: m }));
+  return issues;
+}
+
+// Blueprint-wide critic: one entry per question that has issues.
+export function critiqueBlueprint(functionalBlueprint) {
+  return (functionalBlueprint.topics || []).flatMap((t) =>
+    t.questions.map((q) => ({ questionId: q.id, prompt: q.prompt, topicName: t.name, issues: critiqueRubric(q) })),
+  ).filter((entry) => entry.issues.length);
+}
+
 // ── Migration off the legacy flat `job.questions` ───────────────────────────
 // Groups legacy questions by type into topics, lifting the freeform `rubric`
 // sentence into a single required point and `follow_ups` into followUpIntent,

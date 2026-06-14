@@ -136,6 +136,15 @@ body.light-theme .bs-wdot { background: rgba(0,0,0,.10); }
 .bs-cov-name { font-size: 0.76rem; flex: 1; }
 .bs-cov-tag { font-size: 0.62rem; font-weight: 600; color: var(--color-text-faint); font-family: var(--font-mono); }
 
+.bs-rev-item { padding: 9px 0; border-bottom: 1px solid var(--glass-border); }
+.bs-rev-item:last-child { border-bottom: none; }
+.bs-rev-q { display: block; width: 100%; text-align: left; background: none; border: none; padding: 0 0 6px; font-size: 0.78rem; font-weight: 600; color: var(--color-text); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color var(--duration-fast, 150ms) ease; }
+.bs-rev-q:hover { color: var(--color-gold); }
+.bs-rev-issue { display: flex; align-items: flex-start; gap: 7px; font-size: 0.72rem; line-height: 1.45; color: var(--color-text-muted); padding: 2px 0; }
+.bs-rev-dot { width: 5px; height: 5px; border-radius: 50%; background: #fb923c; margin-top: 6px; flex-shrink: 0; }
+.bs-rev-issue.info { color: var(--color-text-faint); }
+.bs-rev-issue.info .bs-rev-dot { background: var(--color-text-faint); }
+
 .bs-preview { background: var(--color-gold-dim); border: 1px solid var(--glass-border); border-radius: 13px; padding: 13px; }
 .bs-av-row { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
 .bs-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--gradient-gold); display: flex; align-items: center; justify-content: center; color: #06201d; font-weight: 700; font-size: 0.85rem; box-shadow: 0 0 16px var(--color-gold-glow); }
