@@ -1,4 +1,16 @@
 import { document, setTimeout } from './runtime.js';
+
+// Time-of-day greeting personalised with the signed-in user's name. The name is
+// bridged in by the React auth guard via globalThis.IH_USER_NAME (set after
+// /api/auth/me resolves). Falls back to a nameless greeting until it's known.
+export function buildGreeting() {
+  const name = (globalThis.IH_USER_NAME || '').trim();
+  const h = new Date().getHours();
+  const part = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  const icon = h < 12 ? '🌤️' : h < 18 ? '☀️' : '🌙';
+  return name ? `${part}, ${name} ${icon}` : `${part} ${icon}`;
+}
+try { globalThis.__ihBuildGreeting = buildGreeting; } catch {}
 import { escapeHTML } from './escape.js';
 import { EXPERIENCE_BANDS_PROMPT } from './constants.js';
 import { callDeepSeekAPI, enrichJobWithAI, parseAIJson, saveStateToLocalStorage } from './ai-api.js';
@@ -47,7 +59,7 @@ function navigateToTab(tabId) {
 
   if (tabId === 'jobs') {
     breadcrumb.textContent = 'Jobs';
-    mainTitle.textContent = 'Good morning, Devasri 🌤️';
+    mainTitle.textContent = buildGreeting();
     subText.textContent = 'A squad of AI agents working for you';
     actionBtnText.textContent = 'New Job';
     document.getElementById('view-jobs').classList.add('active-view');

@@ -88,6 +88,18 @@ export default function DashboardCrystalPage() {
     if (nameEl) nameEl.textContent = label;
     if (roleEl) roleEl.textContent = ROLE_LABEL[user.user_type] || 'Member';
     if (avatarEl) avatarEl.textContent = (label[0] || 'A').toUpperCase();
+
+    // Personalise the greeting banner with the user's first name. Bridge the
+    // name to the vanilla nav (via globalThis) so tab switches keep it, and
+    // refresh the banner now (the nav may have already rendered it nameless).
+    const firstName = label.split(/\s+/)[0] || label;
+    window.IH_USER_NAME = firstName;
+    const titleEl = document.getElementById('header-main-title');
+    if (titleEl && /^good (morning|afternoon|evening)/i.test((titleEl.textContent || '').trim())) {
+      titleEl.textContent = typeof window.__ihBuildGreeting === 'function'
+        ? window.__ihBuildGreeting()
+        : `Good day, ${firstName}`;
+    }
   }, [phase, user]);
 
   // Own logout from React — the vanilla sidebar binding is unreliable. Wait a

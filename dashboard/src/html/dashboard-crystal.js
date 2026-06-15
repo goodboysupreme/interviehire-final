@@ -162,7 +162,7 @@ export const html = `
         <div class="dashboard-view-body">
           <!-- Dashboard Greeting Banner -->
           <div class="dashboard-banner-wrapper" id="dashboard-banner-wrapper">
-            <h1 class="header-heading" id="header-main-title">Good morning, Devasri</h1>
+            <h1 class="header-heading" id="header-main-title">Good morning</h1>
             <p class="header-subheading" id="header-sub-text">A squad of AI agents working for you</p>
           </div>
           
