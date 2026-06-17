@@ -17,7 +17,7 @@ import { soundEngine } from './sound.js';
 import { showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
 import { activeCandidateSubTabs } from './vetting-data.js';
-import { getDataSource, apiScheduleCandidate } from './api.js';
+import { getDataSource, apiScheduleCandidate, apiUpdateApplicant, isApiMode } from './api.js';
 
 function renderJobDetailPanes(job) {
   const searchVal = document.getElementById('jd-candidate-search').value.trim().toLowerCase();
@@ -38,6 +38,14 @@ function renderJobDetailPanes(job) {
     if (score >= 80) return 'score-green';
     if (score >= 60) return 'score-yellow';
     return 'score-red';
+  };
+
+  const cheatColor = (prob) => {
+    if (!prob) return 'cheat-low';
+    const p = String(prob).toLowerCase();
+    if (p === 'high' || p === 'critical') return 'cheat-high';
+    if (p === 'medium') return 'cheat-medium';
+    return 'cheat-low';
   };
 
   const screeningBadge = (val) => {
@@ -434,6 +442,16 @@ function renderJobDetailPanes(job) {
       });
     });
 
+    pane.querySelectorAll('.btn-remarks').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const row = btn.closest('tr');
+        const candId = row?.getAttribute('data-candidate-id') || btn.getAttribute('data-cand-id');
+        if (candId) {
+          openReportDrawerForCandidate(candId);
+        }
+      });
+    });
+
     pane.querySelectorAll('.table-checkbox-all').forEach(cb => {
       cb.addEventListener('change', () => {
         const table = cb.closest('table');
@@ -530,30 +548,53 @@ function renderJobDetailPanes(job) {
           const label = names.length <= 3 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
           if (action === 'advance') {
             const stages = ['Resume', 'Screening', 'Functional', 'Hired'];
-            ids.forEach(cid => {
+            const advancePromises = ids.map(async (cid) => {
               const cand = AppState.candidates.find(c => c.id === cid);
-              if (cand) {
-                const idx = stages.indexOf(cand.status);
-                if (idx < stages.length - 1) {
-                  const next = stages[idx + 1];
-                  cand.status = next;
-                  if ((next === 'Screening' || next === 'Functional') && cand.interviewStatus == null) {
-                    cand.interviewStatus = 'Not Started';
-                  }
+              if (!cand) return;
+              const idx = stages.indexOf(cand.status);
+              if (idx < stages.length - 1) {
+                const next = stages[idx + 1];
+                cand.status = next;
+                if ((next === 'Screening' || next === 'Functional') && cand.interviewStatus == null) {
+                  cand.interviewStatus = 'Not Started';
+                }
+                if (isApiMode()) {
+                  const details = { status: next };
+                  if (next === 'Screening') details.screeningStatus = 'pending';
+                  else if (next === 'Functional') details.functionalStatus = 'pending';
+                  const updated = await apiUpdateApplicant(cid, details);
+                  if (updated) Object.assign(cand, updated);
                 }
               }
             });
-            saveStateToLocalStorage();
-            refreshAfterStageChange();
-            showPremiumToast(`Advanced ${ids.length} candidate(s) to next stage.`, 'success');
-          } else if (action === 'reject') {
-            ids.forEach(cid => {
-              const cand = AppState.candidates.find(c => c.id === cid);
-              if (cand) cand.status = 'Rejected';
+            Promise.all(advancePromises).then(() => {
+              saveStateToLocalStorage();
+              refreshAfterStageChange();
+              showPremiumToast(`Advanced ${ids.length} candidate(s) to next stage.`, 'success');
+            }).catch(err => {
+              console.error("Bulk advance failed:", err);
+              showPremiumToast("Bulk advance encountered errors.", "error");
+              refreshAfterStageChange();
             });
-            saveStateToLocalStorage();
-            refreshAfterStageChange();
-            showPremiumToast(`Rejected ${ids.length} candidate(s).`, 'success');
+          } else if (action === 'reject') {
+            const rejectPromises = ids.map(async (cid) => {
+              const cand = AppState.candidates.find(c => c.id === cid);
+              if (!cand) return;
+              cand.status = 'Rejected';
+              if (isApiMode()) {
+                const updated = await apiUpdateApplicant(cid, { status: 'Rejected' });
+                if (updated) Object.assign(cand, updated);
+              }
+            });
+            Promise.all(rejectPromises).then(() => {
+              saveStateToLocalStorage();
+              refreshAfterStageChange();
+              showPremiumToast(`Rejected ${ids.length} candidate(s).`, 'success');
+            }).catch(err => {
+              console.error("Bulk reject failed:", err);
+              showPremiumToast("Bulk reject encountered errors.", "error");
+              refreshAfterStageChange();
+            });
           } else if (action === 'schedule' || action === 'reschedule') {
             openScheduleModal({ mode: action, name: label, count: ids.length }, async ({ start, end, timezone, slot }) => {
               if (getDataSource() === 'api') {
@@ -774,7 +815,7 @@ function refreshAfterStageChange() {
   }
 }
 
-function updateCandidateStatus(candId, newStatus) {
+async function updateCandidateStatus(candId, newStatus) {
   const candidate = AppState.candidates.find(c => c.id === candId);
   if (!candidate) return;
   
@@ -783,6 +824,26 @@ function updateCandidateStatus(candId, newStatus) {
 
   if ((newStatus === 'Screening' || newStatus === 'Functional') && candidate.interviewStatus == null) {
     candidate.interviewStatus = 'Not Started';
+  }
+
+  if (isApiMode()) {
+    try {
+      const details = { status: newStatus };
+      if (newStatus === 'Screening') {
+        details.screeningStatus = 'pending';
+      } else if (newStatus === 'Functional') {
+        details.functionalStatus = 'pending';
+      }
+      const updated = await apiUpdateApplicant(candId, details);
+      if (updated) {
+        Object.assign(candidate, updated);
+      }
+    } catch (err) {
+      console.error("Failed to update candidate status on backend:", err);
+      showPremiumToast(`Failed to update candidate status on backend: ${err.message || err}`, 'error');
+      candidate.status = oldStatus;
+      return;
+    }
   }
 
   if (newStatus === 'Rejected') {

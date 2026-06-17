@@ -18,7 +18,7 @@ import { soundEngine } from './sound.js';
 import { initSourcing, navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { renderSpotlightResults, SpotlightCommands, spotlightUi, toggleSpotlightModal } from './spotlight.js';
 import { AppState, generateJobId } from './state.js';
-import { apiCreateJob, apiPatchJobParameters, isApiMode, getDataSource, apiInviteMember, apiUpdateOrganisation } from './api.js';
+import { apiCreateJob, apiPatchJobParameters, isApiMode, getDataSource, apiInviteMember, apiUpdateOrganisation, apiUpdateJobSettings, apiDeleteJob, apiChangePassword } from './api.js';
 
 // ==========================================
 // COMPONENT MOUNT BINDINGS
@@ -226,7 +226,7 @@ function initMountBindings() {
 
   document.addEventListener('click', closeAllJobKebabs);
 
-  window.handleJobKebab = function(jobId, action) {
+  window.handleJobKebab = async function(jobId, action) {
     closeAllJobKebabs();
     const job = AppState.jobs.find(j => j.id === jobId);
     if (!job) return;
@@ -242,6 +242,16 @@ function initMountBindings() {
         break;
       case 'career-page': {
         job.listedOnCareer = !job.listedOnCareer;
+        if (!job.pipelineConfig) job.pipelineConfig = {};
+        if (!job.pipelineConfig.careerPage) job.pipelineConfig.careerPage = {};
+        job.pipelineConfig.careerPage.listed = job.listedOnCareer;
+        if (isApiMode()) {
+          try {
+            await apiUpdateJobSettings(jobId, job);
+          } catch (err) {
+            console.error("Failed to update job settings on backend:", err);
+          }
+        }
         renderJobCards();
         const label = job.listedOnCareer ? 'listed on' : 'removed from';
         showPremiumToast(`"${job.cardName || job.roleName}" ${label} career page.`, 'success');
@@ -270,12 +280,26 @@ function initMountBindings() {
         break;
       case 'archive':
         job.status = 'archived';
+        if (isApiMode()) {
+          try {
+            await apiUpdateJobSettings(jobId, job);
+          } catch (err) {
+            console.error("Failed to archive job on backend:", err);
+          }
+        }
         renderJobCards();
         updateJobsCounters();
         showPremiumToast(`"${job.cardName || job.roleName}" has been archived.`, 'success');
         break;
       case 'unarchive':
         job.status = 'published';
+        if (isApiMode()) {
+          try {
+            await apiUpdateJobSettings(jobId, job);
+          } catch (err) {
+            console.error("Failed to restore job on backend:", err);
+          }
+        }
         renderJobCards();
         updateJobsCounters();
         showPremiumToast(`"${job.cardName || job.roleName}" has been restored.`, 'success');
@@ -291,6 +315,15 @@ function initMountBindings() {
           }
           return c.jobApplied === job.roleName || c.jobApplied === job.cardName;
         });
+        if (isApiMode()) {
+          try {
+            await apiDeleteJob(jobId);
+          } catch (err) {
+            console.error("Failed to delete job on backend:", err);
+            showPremiumToast("Failed to delete job on backend.", "error");
+            break;
+          }
+        }
         AppState.jobs.splice(idx, 1);
         AppState.candidates = AppState.candidates.filter(c => {
           if (getDataSource() === 'api' && job._backend) {
@@ -385,22 +418,31 @@ function initMountBindings() {
 
   const modalEditJobSave = document.getElementById('modal-edit-job-save');
   if (modalEditJobSave) {
-    modalEditJobSave.addEventListener('click', () => {
-    const job = AppState.jobs.find(j => j.id === editJobModalJobId);
-    if (!job) return;
-    const nameVal = document.getElementById('modal-edit-job-name').value.trim();
-    if (!nameVal) {
-      showPremiumToast('Job name is required.', 'error');
-      return;
-    }
-    job.cardName = nameVal;
-    const idVal = document.getElementById('modal-edit-job-id').value.trim();
-    if (idVal) job.customJobId = idVal;
-    job.tags = [...editJobModalTags];
-    closeEditJobModal();
-    renderJobCards();
-    updateJobsCounters();
-    showPremiumToast(`Job updated to "${nameVal}".`, 'success');
+    modalEditJobSave.addEventListener('click', async () => {
+      const job = AppState.jobs.find(j => j.id === editJobModalJobId);
+      if (!job) return;
+      const nameVal = document.getElementById('modal-edit-job-name').value.trim();
+      if (!nameVal) {
+        showPremiumToast('Job name is required.', 'error');
+        return;
+      }
+      job.cardName = nameVal;
+      const idVal = document.getElementById('modal-edit-job-id').value.trim();
+      if (idVal) job.customJobId = idVal;
+      job.tags = [...editJobModalTags];
+      
+      if (isApiMode()) {
+        try {
+          await apiUpdateJobSettings(editJobModalJobId, job);
+        } catch (err) {
+          console.error("Failed to update job settings on backend:", err);
+        }
+      }
+      
+      closeEditJobModal();
+      renderJobCards();
+      updateJobsCounters();
+      showPremiumToast(`Job updated to "${nameVal}".`, 'success');
     });
   }
 
@@ -834,7 +876,80 @@ function initMountBindings() {
   if (btnChangePass) {
     btnChangePass.addEventListener('click', () => {
       soundEngine.playClick();
-      showPremiumToast('Password change dialog would open here.', 'info');
+      
+      if (!isApiMode()) {
+        showPremiumToast('Password updates are only available in API mode.', 'info');
+        return;
+      }
+
+      if (document.getElementById('ih-change-password-modal')) return;
+
+      const overlay = document.createElement('div');
+      overlay.id = 'ih-change-password-modal';
+      overlay.innerHTML = `
+        <div style="position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);backdrop-filter:blur(10px);">
+          <form id="ih-password-form" style="width:340px;background:var(--color-surface-solid,#111);border:1px solid var(--glass-border,rgba(255,255,255,.08));border-radius:16px;padding:22px;box-shadow:0 24px 60px rgba(0,0,0,.55);font-family:var(--font-body,system-ui,sans-serif);">
+            <div style="font-family:var(--font-display,system-ui,sans-serif);font-size:1.05rem;font-weight:600;color:var(--color-text,#e8e8e8);margin-bottom:14px;">Update Password</div>
+            
+            <input id="ih-curr-pass" type="password" required placeholder="Current Password" autocomplete="current-password" style="width:100%;margin-bottom:10px;padding:10px 12px;border-radius:9px;border:1px solid var(--glass-border,rgba(255,255,255,.1));background:var(--color-surface-2,rgba(255,255,255,.03));color:var(--color-text,#e8e8e8);font-size:.85rem;box-sizing:border-box;" />
+            <input id="ih-new-pass" type="password" required placeholder="New Password" autocomplete="new-password" style="width:100%;margin-bottom:10px;padding:10px 12px;border-radius:9px;border:1px solid var(--glass-border,rgba(255,255,255,.1));background:var(--color-surface-2,rgba(255,255,255,.03));color:var(--color-text,#e8e8e8);font-size:.85rem;box-sizing:border-box;" />
+            <input id="ih-new-pass-confirm" type="password" required placeholder="Confirm New Password" autocomplete="new-password" style="width:100%;margin-bottom:14px;padding:10px 12px;border-radius:9px;border:1px solid var(--glass-border,rgba(255,255,255,.1));background:var(--color-surface-2,rgba(255,255,255,.03));color:var(--color-text,#e8e8e8);font-size:.85rem;box-sizing:border-box;" />
+            
+            <div id="ih-pass-err" style="color:#f87171;font-size:.72rem;margin-bottom:12px;min-height:14px;"></div>
+            
+            <div style="display:flex;gap:10px;">
+              <button type="button" id="ih-pass-cancel-btn" style="flex:1;padding:11px;border:1px solid var(--glass-border,rgba(255,255,255,.12));border-radius:9px;background:transparent;color:var(--color-text-muted,#9a9a9a);font-weight:600;font-size:.85rem;cursor:pointer;">Cancel</button>
+              <button type="submit" id="ih-pass-submit-btn" style="flex:1;padding:11px;border:none;border-radius:9px;background:var(--color-gold,#2dd4bf);color:#06201d;font-weight:600;font-size:.85rem;cursor:pointer;">Update</button>
+            </div>
+          </form>
+        </div>`;
+      
+      document.body.appendChild(overlay);
+
+      const form = overlay.querySelector('#ih-password-form');
+      const errEl = overlay.querySelector('#ih-pass-err');
+      const submitBtn = overlay.querySelector('#ih-pass-submit-btn');
+      const cancelBtn = overlay.querySelector('#ih-pass-cancel-btn');
+
+      cancelBtn.addEventListener('click', () => {
+        soundEngine.playClick();
+        overlay.remove();
+      });
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay.children[0]) {
+          soundEngine.playClick();
+          overlay.remove();
+        }
+      });
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const currPass = overlay.querySelector('#ih-curr-pass').value;
+        const newPass = overlay.querySelector('#ih-new-pass').value;
+        const confirmPass = overlay.querySelector('#ih-new-pass-confirm').value;
+
+        if (newPass !== confirmPass) {
+          errEl.textContent = 'New passwords do not match';
+          return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Updating…';
+        errEl.textContent = '';
+
+        try {
+          await apiChangePassword(currPass, newPass);
+          overlay.remove();
+          soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
+          showPremiumToast('Password updated successfully.', 'success');
+        } catch (err) {
+          console.error("Password update error:", err);
+          errEl.textContent = (err && err.message) || 'Failed to update password';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Update';
+        }
+      });
     });
   }
 

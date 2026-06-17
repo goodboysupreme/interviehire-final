@@ -34,6 +34,7 @@ with engine.connect() as conn:
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS proctoring_severity_flag VARCHAR;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS calendar_sequence INTEGER DEFAULT 0;"))
     conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS screening_questions TEXT;"))
+    conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS status VARCHAR;"))
     conn.commit()
 
     # Add 'super_admin' to usertype enum in postgresql

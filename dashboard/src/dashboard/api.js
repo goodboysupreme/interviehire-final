@@ -98,6 +98,38 @@ export async function apiCreateTestSession(jobId) {
   return data?.session_id || null;
 }
 
+export async function apiUploadResumes(jobId, files) {
+  const fd = new FormData();
+  files.forEach(f => {
+    fd.append('files', f);
+  });
+  const base = (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_URL) || 'http://localhost:8000/api';
+  const res = await fetch(`${base}/jobs/${jobId}/applicants/upload-resumes`, {
+    method: 'POST',
+    credentials: 'include',
+    body: fd
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let err = text;
+    try { err = JSON.parse(text)?.detail || text; } catch {}
+    throw new Error(err);
+  }
+  const data = await res.json();
+  const list = Array.isArray(data) ? data : (data?.applicants || data?.data || []);
+  return list.map(mapApplicantOutToCandidate);
+}
+
+export async function apiChangePassword(currentPassword, newPassword) {
+  return request('/settings/password', {
+    method: 'PUT',
+    body: {
+      current_password: currentPassword,
+      new_password: newPassword
+    }
+  });
+}
+
 export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'screening') {
   const data = await request(`/jobs/applicants/${applicantId}/schedule`, {
     method: 'POST',
@@ -106,6 +138,66 @@ export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'sc
       stage: stage,
     },
   });
+  return mapApplicantOutToCandidate(data);
+}
+
+export async function apiUpdateJobSettings(id, job) {
+  const body = {
+    title: job.cardName || job.roleName || undefined,
+    role_name: job.roleName || job.cardName || undefined,
+    experience_band: job.experienceBand || undefined,
+    custom_job_id: (job.customJobId && job.customJobId !== '-') ? job.customJobId : undefined,
+    status: job.status || undefined,
+    is_job_listed: job.pipelineConfig?.careerPage?.listed ?? undefined,
+    resume_analysis_enabled: job.pipelineConfig?.resumeAnalysis?.enabled ?? undefined,
+    recruiter_screening_enabled: job.pipelineConfig?.recruiterScreening?.enabled ?? undefined,
+    functional_interview_enabled: job.pipelineConfig?.functionalInterview?.enabled ?? undefined,
+    description: job.description || undefined,
+    tags: job.tags || undefined,
+    job_type: job.jobType || undefined,
+    location: job.location || undefined,
+  };
+  // Clean undefined properties so we don't send them
+  Object.keys(body).forEach(key => body[key] === undefined && delete body[key]);
+  return mapJobOutToJob(await request(`/jobs/${id}/settings`, { method: 'PATCH', body }));
+}
+
+export async function apiDeleteJob(id) {
+  return request(`/jobs/${id}`, { method: 'DELETE' });
+}
+
+export async function apiUpdateApplicant(applicantId, details) {
+  const body = {};
+  if (details.status !== undefined) body.status = details.status;
+  if (details.screeningStatus !== undefined) body.screening_status = details.screeningStatus;
+  if (details.screeningScore !== undefined) body.screening_score = details.screeningScore;
+  if (details.functionalStatus !== undefined) body.functional_status = details.functionalStatus;
+  if (details.functionalScore !== undefined) body.functional_score = details.functionalScore;
+  if (details.cheatProbability !== undefined) body.cheat_probability = details.cheatProbability;
+  if (details.resumeAnalysed !== undefined) body.resume_analysed = details.resumeAnalysed;
+  if (details.resumeShortlisted !== undefined) body.resume_shortlisted = details.resumeShortlisted;
+  if (details.resumeWaitlisted !== undefined) body.resume_waitlisted = details.resumeWaitlisted;
+  if (details.recruiterScreening !== undefined) body.recruiter_screening = details.recruiterScreening;
+  if (details.recruiterScreeningScore !== undefined) body.recruiter_screening_score = details.recruiterScreeningScore;
+  if (details.attemptedAt !== undefined) body.attempted_at = details.attemptedAt;
+  if (details.remarks !== undefined) body.remarks = details.remarks;
+  if (details.matchScore !== undefined) body.match_score = details.matchScore;
+  if (details.resumeAnalysisReport !== undefined) body.resume_analysis_report = details.resumeAnalysisReport;
+  if (details.screeningScheduledAt !== undefined) body.screening_scheduled_at = details.screeningScheduledAt;
+  if (details.functionalScheduledAt !== undefined) body.functional_scheduled_at = details.functionalScheduledAt;
+  if (details.overallInterviewScore !== undefined) body.overall_interview_score = details.overallInterviewScore;
+  if (details.proctoringSeverityFlag !== undefined) body.proctoring_severity_flag = details.proctoringSeverityFlag;
+  if (details.calendarSequence !== undefined) body.calendar_sequence = details.calendarSequence;
+  if (details.schedulingToken !== undefined) body.scheduling_token = details.schedulingToken;
+  if (details.calendarEventId !== undefined) body.calendar_event_id = details.calendarEventId;
+
+  for (const [key, value] of Object.entries(details)) {
+    if (body[key] === undefined && key.includes('_')) {
+      body[key] = value;
+    }
+  }
+
+  const data = await request(`/jobs/applicants/${applicantId}`, { method: 'PATCH', body });
   return mapApplicantOutToCandidate(data);
 }
 
@@ -226,8 +318,19 @@ function mapSource(s) {
 }
 
 function mapApplicantOutToCandidate(a = {}) {
-  const status = a.functional_status ? 'Functional' : (a.screening_status ? 'Screening' : 'Resume');
+  const status = a.status || (a.functional_status ? 'Functional' : (a.screening_status ? 'Screening' : 'Resume'));
   const rawInterviewStatus = status === 'Functional' ? a.functional_status : (status === 'Screening' ? a.screening_status : null);
+  
+  let remarks = [];
+  if (a.remarks) {
+    try { remarks = JSON.parse(a.remarks); } catch { remarks = []; }
+  }
+  
+  let resumeAnalysis = null;
+  if (a.resume_analysis_report) {
+    try { resumeAnalysis = JSON.parse(a.resume_analysis_report); } catch { resumeAnalysis = null; }
+  }
+
   return {
     id: a.id,
     name: a.name || '',
@@ -239,6 +342,9 @@ function mapApplicantOutToCandidate(a = {}) {
     interviewScore: a.functional_score ?? a.overall_interview_score ?? null,
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,
     matchScore: a.match_score ?? null,
+    remarks: remarks,
+    resumeAnalysis: resumeAnalysis,
+    score: a.match_score != null ? `${a.match_score}%` : '—',
     _backend: true,
   };
 }

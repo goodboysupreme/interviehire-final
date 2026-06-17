@@ -40,6 +40,7 @@ class Applicant(Base):
     source = Column(Enum(ApplicantSource), nullable=True)
     resume_url = Column(String, nullable=True)
     remarks = Column(Text, nullable=True)
+    status = Column(String, default="Resume", nullable=True)
 
     job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id"), nullable=False)
 

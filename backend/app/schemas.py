@@ -193,6 +193,7 @@ class ApplicantOut(BaseModel):
     phone: Optional[str]
     source: Optional[ApplicantSource]
     remarks: Optional[str]
+    status: Optional[str] = None
     match_score: Optional[float] = None
     resume_analysis_report: Optional[str] = None
  
@@ -233,6 +234,7 @@ class BulkApplicantsIn(BaseModel):
     applicants: List[AddApplicantIn]
 
 class ApplicantUpdateIn(BaseModel):
+    status: Optional[str] = None
     screening_status: Optional[InterviewStatus] = None
     screening_score: Optional[float] = None
     functional_status: Optional[InterviewStatus] = None

@@ -8,7 +8,7 @@ import { computeWeightedScore, getScoringConfig, recommendationFromScore } from 
 import { soundEngine } from './sound.js';
 import { addCandidateToAppState, extractResumeIdentity, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
-import { getDataSource } from './api.js';
+import { getDataSource, isApiMode, apiUpdateApplicant } from './api.js';
 
 // ==========================================
 // RESUME ANALYSIS (AI-powered, Lina)
@@ -802,6 +802,12 @@ ${resumeText.slice(0, 5000)}`;
     cand.resumeAnalysis = result;
     cand.resumeText = resumeText; // persist so "Reanalyse" works after reloads
     saveStateToLocalStorage();
+    if (isApiMode()) {
+      apiUpdateApplicant(cid, {
+        matchScore: result.matchScore,
+        resumeAnalysisReport: JSON.stringify(result)
+      }).catch(err => console.error("Failed to sync resume analysis report:", err));
+    }
   }
   renderAnalysisResult(cid, result);
   if (!quiet) showPremiumToast(result.engine === 'local' ? 'Resume analysed (local engine).' : 'Deep resume analysis complete.', 'success');

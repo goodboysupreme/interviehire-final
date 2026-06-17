@@ -1820,10 +1820,10 @@ def schedule_interview(
     active_org_id: Optional[UUID] = Depends(get_active_org_id),
     db: Session = Depends(get_db)
 ):
-    """Schedule an interview for a candidate and send calendar invite + interview link."""
+    """Schedule an interview for a candidate and send proposed slot email invitation."""
     import uuid as uuid_lib
     from datetime import datetime
-    from app.utils.email_sender import send_ical_invitation_email
+    from app.utils.email_sender import send_stage_invitation_email
 
     applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
     stage = data.get("stage", "functional")  # 'screening' or 'functional'
@@ -1846,11 +1846,13 @@ def schedule_interview(
 
     if stage == "screening":
         applicant.screening_scheduled_at = scheduled_at
-        applicant.screening_status = InterviewStatus.scheduled
+        applicant.screening_status = InterviewStatus.pending
+        applicant.status = "Screening"
         stage_name = "Recruiter Screening"
     else:
         applicant.functional_scheduled_at = scheduled_at
-        applicant.functional_status = InterviewStatus.scheduled
+        applicant.functional_status = InterviewStatus.pending
+        applicant.status = "Functional"
         stage_name = "Functional Interview"
 
     db.commit()
@@ -1858,82 +1860,29 @@ def schedule_interview(
 
     job = db.query(Job).filter(Job.id == applicant.job_id).first()
     job_title = job.role_name or job.title if job else "General Position"
-    recruiter_id = job.created_by_id if job else None
 
-    # Resolve organizer from Organisation
-    from app.models.organisation import Organisation
-    organizer_name = "IntervieHire Host"
-    organizer_email = settings.SMTP_FROM or "hr@interviehire.com"
-    if job and job.organisation_id:
-        org = db.query(Organisation).filter(Organisation.id == job.organisation_id).first()
-        if org:
-            if org.org_name:
-                organizer_name = org.org_name
-            if org.contact_email:
-                organizer_email = org.contact_email
-
-    # Create/update Google Calendar event
+    # Send stage invitation email with confirm/reschedule links
     try:
-        from app.utils.google_calendar import create_calendar_event, update_calendar_event
-        summary = f"{stage_name} - {applicant.name}"
-        desc = f"Interview scheduled for the {job_title} role at IntervieHire."
-        if not applicant.calendar_event_id:
-            applicant.calendar_sequence = 0
-            event_id = create_calendar_event(
-                summary=summary,
-                description=desc,
-                candidate_email=applicant.email,
-                start_time=scheduled_at,
-                recruiter_id=recruiter_id,
-                db=db
-            )
-            applicant.calendar_event_id = event_id
-        else:
-            applicant.calendar_sequence = (applicant.calendar_sequence or 0) + 1
-            update_calendar_event(
-                applicant.calendar_event_id,
-                scheduled_at,
-                recruiter_id=recruiter_id,
-                db=db
-            )
-        db.commit()
-        db.refresh(applicant)
-    except Exception as cal_err:
-        logger.error(f"Failed to update Google Calendar event: {cal_err}")
-
-    # Send confirmation email with calendar invite and interview link
-    try:
+        backend_url = settings.GOOGLE_REDIRECT_URI.split('/api/')[0]
+        confirm_link = f"{backend_url}/api/public/confirm/{applicant.scheduling_token}"
         reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
-        interview_link = f"{settings.FRONTEND_URL}/interview?sessionId={applicant.id}"
-        uid = f"interview-{stage_name.lower().replace(' ', '-')}-{applicant.id}@interviehire.com"
-        send_ical_invitation_email(
+        
+        send_stage_invitation_email(
             candidate_name=applicant.name,
             candidate_email=applicant.email,
             job_title=job_title,
             stage_name=stage_name,
-            start_time=scheduled_at,
-            duration_minutes=30,
-            uid=uid,
-            sequence=applicant.calendar_sequence or 0,
-            organizer_email=organizer_email,
-            reschedule_link=reschedule_link,
-            interview_link=interview_link,
-            organizer_name=organizer_name
+            proposed_time=scheduled_at,
+            confirm_link=confirm_link,
+            reschedule_link=reschedule_link
         )
     except Exception as mail_err:
-        logger.error(f"Failed to send interview confirmation email: {mail_err}")
-
-    # Sync to AI backend
-    try:
-        from app.utils.ai_sync import sync_applicant_to_ai
-        sync_applicant_to_ai(db, applicant)
-    except Exception as sync_err:
-        logger.error(f"Failed to sync to AI: {sync_err}")
+        logger.error(f"Failed to send stage invitation email: {mail_err}")
 
     # Broadcast WebSocket update
     message = OutgoingMessage(
         type="candidate_update",
-        content=f"Candidate {applicant.name} scheduled for {stage_name}",
+        content=f"Proposed slot sent to {applicant.name} for {stage_name}",
         sender="System"
     ).model_dump_json()
     import asyncio

@@ -1,6 +1,6 @@
 import { document, window, requestAnimationFrame, setTimeout, setInterval, clearInterval } from './runtime.js';
 import { escapeHTML } from './escape.js';
-import { isApiMode, apiAddApplicantsBulk } from './api.js';
+import { isApiMode, apiAddApplicantsBulk, apiUploadResumes } from './api.js';
 import { navigateToJobDetail } from './job-detail.js';
 import { appendTerminalLog, recalculateJobPipelines, renderKanbanBoard } from './kanban-swarm.js';
 import { navigateToTab, openDrawer } from './navigation.js';
@@ -686,7 +686,8 @@ function simulateResumesParsing(files) {
       progress: 0,
       status: 'parsing',
       textContent: null,
-      identity: null
+      identity: null,
+      file: file
     };
     uploadedFiles.push(item);
 
@@ -800,6 +801,35 @@ function importResumesCandidates() {
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
+
+  if (isApiMode() && activeJob._backend) {
+    const filesToUpload = uploadedFiles.map(f => f.file).filter(Boolean);
+    if (filesToUpload.length > 0) {
+      showPremiumToast(`Uploading ${filesToUpload.length} resume(s) to "${escapeHTML(activeJob.roleName)}"...`, 'success');
+      apiUploadResumes(activeJob.id, filesToUpload)
+        .then((saved) => {
+          soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
+          showPremiumToast(`Successfully uploaded and parsed ${saved.length} candidate(s).`, 'success');
+          
+          uploadedFiles = [];
+          const box = document.getElementById('resumes-preview-box');
+          if (box) box.style.display = 'none';
+          const fileRes = document.getElementById('input-file-resumes');
+          if (fileRes) fileRes.value = '';
+          const dropzone = document.getElementById('dropzone-resumes');
+          if (dropzone) dropzone.style.display = '';
+          const footer = dropzone ? dropzone.parentElement.querySelector('.sourcing-panel-footer') : null;
+          if (footer) footer.style.display = '';
+
+          navigateToJobDetail(activeJob.id);
+        })
+        .catch(err => {
+          console.error("Resumes upload failed:", err);
+          showPremiumToast(`Upload failed: ${err.message || err}`, 'error');
+        });
+      return;
+    }
+  }
 
   const importedCandIds = [];
   uploadedFiles.forEach(file => {

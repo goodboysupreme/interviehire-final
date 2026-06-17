@@ -8,7 +8,7 @@ import { getCandidateNextStage, getCandidateTranscriptLines } from './report.js'
 import { getScoringConfig } from './scoring-config.js';
 import { soundEngine } from './sound.js';
 import { AppState } from './state.js';
-import { getDataSource } from './api.js';
+import { getDataSource, isApiMode, apiUpdateApplicant } from './api.js';
 
 // ==========================================
 // CANDIDATE REPORT — FULL PAGE VIEW
@@ -799,6 +799,11 @@ function bindReportPage(candidate, job, analysis, root) {
     const feedEl = root.querySelector('#rp-remarks-feed');
     feedEl.innerHTML = candidate.remarks.map(r => `<div class="rp-remark"><span class="rp-remark-time">${escapeHTML(r.at)}</span><p>${escapeHTML(r.text)}</p></div>`).join('');
     soundEngine.playChime([523.25, 659.25], 0.1, 0.06);
+    if (isApiMode()) {
+      apiUpdateApplicant(candidate.id, {
+        remarks: JSON.stringify(candidate.remarks)
+      }).catch(err => console.error("Failed to sync candidate remarks:", err));
+    }
   });
 
   // Stage actions

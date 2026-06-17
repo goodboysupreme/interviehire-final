@@ -9,7 +9,7 @@ import { renderJobCards } from './render-views.js';
 import { soundEngine } from './sound.js';
 import { navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
-import { getDataSource } from './api.js';
+import { getDataSource, apiUpdateJobSettings, isApiMode } from './api.js';
 import { ensureFunctionalBlueprint, computeCalibration } from './blueprint-engine.js';
 import { pushUrl } from './url-sync.js';
 
@@ -156,7 +156,7 @@ function openPublishJobModal(jobId) {
     showPremiumToast('Job Reference ID copied to clipboard!', 'success');
   });
 
-  document.getElementById('btn-confirm-publish').addEventListener('click', () => {
+  document.getElementById('btn-confirm-publish').addEventListener('click', async () => {
     const cardName = document.getElementById('pub-card-name').value.trim();
     const roleName = document.getElementById('pub-role-name').value.trim();
     const tagsVal = document.getElementById('pub-tags').value.trim();
@@ -171,6 +171,14 @@ function openPublishJobModal(jobId) {
       job.pipelineConfig.resumeAnalysis.enabled = true;
       job.pipelineConfig.recruiterScreening.enabled = true;
       job.pipelineConfig.functionalInterview.enabled = true;
+    }
+
+    if (isApiMode()) {
+      try {
+        await apiUpdateJobSettings(jobId, job);
+      } catch (err) {
+        console.error("Failed to publish job on backend:", err);
+      }
     }
 
     saveStateToLocalStorage();
