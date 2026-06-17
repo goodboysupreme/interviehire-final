@@ -16,7 +16,7 @@ def hash_password(password: str) -> str:
 @router.put("/password")
 def change_password(data: ChangePasswordIn, db: Session = Depends(get_db)):
     # Retrieve default admin user (Devasri)
-    user = db.query(User).filter(User.email == "devasri@interviehire.ai").first()
+    user = db.query(User).filter(User.email == "devasri@zeko.ai").first()
     if not user:
         raise HTTPException(status_code=404, detail="Admin user not found")
     

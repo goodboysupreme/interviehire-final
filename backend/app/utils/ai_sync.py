@@ -48,31 +48,6 @@ def _is_valid_guidance(guidance) -> bool:
     return isinstance(rubric, dict) and bool(rubric.get("requiredPoints"))
 
 
-def _extract_runbook(params) -> Optional[dict]:
-    """Pull the interview run-sheet (opening/closing line + per-topic segues) out
-    of a job's functional_parameters so the engine's director can speak them.
-    Returns None when there's nothing to carry, so the JobRole's existing
-    evaluationCriteria is left untouched."""
-    if not isinstance(params, dict):
-        return None
-    structure = params.get("interviewStructure") or {}
-    opening = structure.get("openingLine") if isinstance(structure, dict) else ""
-    closing = structure.get("closingLine") if isinstance(structure, dict) else ""
-    opening = opening.strip() if isinstance(opening, str) else ""
-    closing = closing.strip() if isinstance(closing, str) else ""
-    segue_lines = {}
-    for topic in params.get("topics") or []:
-        if not isinstance(topic, dict):
-            continue
-        name = topic.get("name")
-        segue = topic.get("segue")
-        if isinstance(name, str) and isinstance(segue, str) and name.strip() and segue.strip():
-            segue_lines[name.strip()] = segue.strip()
-    if not (opening or closing or segue_lines):
-        return None
-    return {"openingLine": opening, "closingLine": closing, "segueLines": segue_lines}
-
-
 def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[InterviewSession]:
     try:
         # Load relationships if not fully loaded
@@ -163,24 +138,6 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
             job_role.title = job.role_name or job.title
             job_role.description = job.description or "No description provided"
             job_role.primaryCriteria = primary_criteria
-            db.commit()
-
-        # 2b. Carry the interview run-sheet (opening/closing + per-topic segues)
-        # into evaluationCriteria.runbook so the director can speak them. Additive:
-        # merges under "runbook", leaving the scoring-weight keys untouched.
-        try:
-            full_params = (
-                json.loads(job.functional_parameters)
-                if isinstance(job.functional_parameters, str)
-                else (job.functional_parameters or {})
-            )
-        except Exception:
-            full_params = {}
-        runbook = _extract_runbook(full_params)
-        if runbook is not None:
-            ec = dict(job_role.evaluationCriteria or {})
-            ec["runbook"] = runbook
-            job_role.evaluationCriteria = ec  # reassign so SQLAlchemy flags the JSON column dirty
             db.commit()
 
         # 3. Sync Candidate

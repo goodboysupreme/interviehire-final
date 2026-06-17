@@ -75,12 +75,9 @@ def _build_job_out(job: Job, db: Session) -> dict:
             tags = json.loads(job.tags)
         except Exception:
             tags = [t.strip() for t in job.tags.split(",") if t.strip()]
-    from app.models.organisation import Organisation
-    org = db.query(Organisation).filter(Organisation.id == job.organisation_id).first() if job.organisation_id else None
     return {
         **job.__dict__,
         "created_by_name": job.created_by.name if job.created_by else None,
-        "organisation_name": org.org_name if org else None,
         "tags": tags,
         "pipeline": JobPipelineCounts(
             total=len(applicants),

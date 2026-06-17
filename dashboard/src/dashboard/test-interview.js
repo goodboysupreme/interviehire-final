@@ -27,14 +27,39 @@ function functionalStats(job) {
 export function renderTestInterviewPane(job, container) {
   if (!container) return;
 
-  // Local mode has no backend to spin a session against — keep it honest.
+  // Local mode has no backend to author a session from the blueprint, but we can
+  // still launch the full candidate experience as a keyless demo session (the
+  // candidate room bootstraps one via GET /api/interview/demo-session).
   if (!isApiMode()) {
+    const roleLabelLocal = escapeHTML(job.cardName || job.roleName || 'this role');
     container.innerHTML = `
-      <div class="ti-empty">
-        <svg xmlns="http://www.w3.org/2000/svg" width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-        <p>Test interviews run against the live backend.</p>
-        <span class="ti-empty-sub">Switch the dashboard to API mode to launch a real interview from this job's blueprint.</span>
+      <div class="ti-pane">
+        <div class="ti-hero card-glass">
+          <div class="ti-hero-glow"></div>
+          <div class="ti-hero-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </div>
+          <div class="ti-hero-body">
+            <span class="ti-eyebrow">Developer tool</span>
+            <h3 class="ti-title">Run a test interview</h3>
+            <p class="ti-subtitle">Launch the full candidate experience for <strong>${roleLabelLocal}</strong> — system check, 8-point gaze calibration, the live AI avatar, and real-time proctoring. This demo run uses a sample session and is excluded from the funnel and analytics.</p>
+            <button class="ti-launch-btn" id="ti-launch-btn-demo">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+              Launch test interview
+            </button>
+            <p class="ti-hint">Runs right here inside the portal. Switch the dashboard to API mode to run from this job's authored blueprint instead.</p>
+            <div class="ti-result" id="ti-result" hidden></div>
+          </div>
+        </div>
       </div>`;
+    const demoBtn = container.querySelector('#ti-launch-btn-demo');
+    if (demoBtn) {
+      demoBtn.addEventListener('click', () => {
+        soundEngine.playChime([392, 523.25], 0.1, 0.1);
+        embedInterviewRoom(job, container, `${ENGINE_WEB_URL}/interview`, roleLabelLocal);
+        showPremiumToast('Test interview started inside the portal.', 'success');
+      });
+    }
     return;
   }
 
@@ -69,23 +94,23 @@ export function renderTestInterviewPane(job, container) {
           </div>
 
           ${ready ? `
-            <div class="ti-launch-row">
-              <button class="ti-launch-btn" id="ti-launch-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
-                Launch test interview
-              </button>
-              <button class="ti-launch-btn ti-launch-convai" id="ti-launch-convai" title="Open the Convai voice/avatar interview room">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
-                Launch (Convai voice)
-              </button>
-            </div>
-            <p class="ti-hint">Opens the candidate room in a new tab (<code>${escapeHTML(ENGINE_WEB_URL)}</code>). Convai voice mode uses the <code>/interview/convai</code> room.</p>
+            <button class="ti-launch-btn" id="ti-launch-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+              Launch test interview
+            </button>
+            <p class="ti-hint">Runs right here inside the portal — system check, gaze calibration, live avatar and proctoring.</p>
             <div class="ti-result" id="ti-result" hidden></div>
           ` : `
             <div class="ti-warn">
               <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span>No functional questions yet. Author a blueprint in the <strong>Questions Generator</strong> tab, then come back to launch a test interview.</span>
+              <span>No functional questions yet. Author a blueprint in the <strong>Questions Generator</strong> tab for a full blueprint run — or open the candidate room now with a sample session.</span>
             </div>
+            <button class="ti-launch-btn" id="ti-open-room">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+              Open candidate room
+            </button>
+            <p class="ti-hint">Opens the candidate room in-portal with a keyless sample session — system check, gaze calibration, live avatar and proctoring.</p>
+            <div class="ti-result" id="ti-result" hidden></div>
           `}
         </div>
       </div>
@@ -104,15 +129,25 @@ export function renderTestInterviewPane(job, container) {
 
   const launchBtn = container.querySelector('#ti-launch-btn');
   if (launchBtn) {
-    launchBtn.addEventListener('click', () => launchTestInterview(job, launchBtn, container, '/interview'));
+    launchBtn.addEventListener('click', () => launchTestInterview(job, launchBtn, container));
   }
-  const convaiBtn = container.querySelector('#ti-launch-convai');
-  if (convaiBtn) {
-    convaiBtn.addEventListener('click', () => launchTestInterview(job, convaiBtn, container, '/interview/convai'));
+
+  // No authored blueprint → still let the recruiter open the (correct) candidate
+  // room with a keyless sample session: the room bootstraps one via
+  // GET /api/interview/demo-session, so no test-session is created from a blank
+  // blueprint. The room itself owns the avatar + proctoring experience.
+  const openRoomBtn = container.querySelector('#ti-open-room');
+  if (openRoomBtn) {
+    openRoomBtn.addEventListener('click', () => {
+      soundEngine.playChime([392, 523.25], 0.1, 0.1);
+      const roleLabelOpen = escapeHTML(job.cardName || job.roleName || 'this role');
+      embedInterviewRoom(job, container, `${ENGINE_WEB_URL}/interview`, roleLabelOpen);
+      showPremiumToast('Candidate room opened inside the portal.', 'success');
+    });
   }
 }
 
-async function launchTestInterview(job, btn, container, routePath = '/interview') {
+async function launchTestInterview(job, btn, container) {
   soundEngine.playChime([392, 523.25], 0.1, 0.1);
   const original = btn.innerHTML;
   btn.disabled = true;
@@ -123,21 +158,9 @@ async function launchTestInterview(job, btn, container, routePath = '/interview'
     const sessionId = await apiCreateTestSession(job.id);
     if (!sessionId) throw new Error('No session id returned');
 
-    const url = `${ENGINE_WEB_URL}${routePath}?sessionId=${encodeURIComponent(sessionId)}`;
-    const opened = window.open(url, '_blank');
-
-    const result = container.querySelector('#ti-result');
-    if (result) {
-      result.hidden = false;
-      result.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-        <span>Test session ready.</span>
-        <a href="${escapeHTML(url)}" target="_blank" rel="noopener">Open candidate room ↗</a>`;
-    }
-    showPremiumToast(
-      opened ? 'Test interview launched in a new tab.' : 'Test session ready — use the link below (popup was blocked).',
-      'success'
-    );
+    const url = `${ENGINE_WEB_URL}/interview?sessionId=${encodeURIComponent(sessionId)}`;
+    embedInterviewRoom(job, container, url, escapeHTML(job.cardName || job.roleName || 'this role'));
+    showPremiumToast('Test interview started inside the portal.', 'success');
     soundEngine.playChime([523.25, 659.25, 783.99], 0.14, 0.08);
   } catch (err) {
     console.error('Test interview launch failed:', err);
@@ -146,5 +169,39 @@ async function launchTestInterview(job, btn, container, routePath = '/interview'
     btn.disabled = false;
     btn.classList.remove('is-loading');
     btn.innerHTML = original;
+  }
+}
+
+// Embed the candidate interview room *inside* the portal (an iframe in the Test
+// Interview pane) instead of opening a new tab, so the whole experience — system
+// check, gaze calibration, live avatar and proctoring — runs in-portal. Camera,
+// microphone, screen-share and fullscreen are delegated to the frame via `allow`.
+function embedInterviewRoom(job, container, url, roleLabel) {
+  container.innerHTML = `
+    <div class="ti-embed">
+      <div class="ti-embed-bar">
+        <div class="ti-embed-title">
+          <span class="ti-embed-dot"></span>
+          <span>Test interview · <strong>${roleLabel}</strong></span>
+        </div>
+        <div class="ti-embed-actions">
+          <a class="ti-embed-link" href="${escapeHTML(url)}" target="_blank" rel="noopener">Open in new tab ↗</a>
+          <button class="ti-embed-close" type="button" id="ti-embed-close">✕ End &amp; close</button>
+        </div>
+      </div>
+      <iframe
+        class="ti-embed-frame"
+        src="${escapeHTML(url)}"
+        title="Candidate interview room"
+        allow="camera; microphone; display-capture; autoplay; fullscreen; clipboard-write; gamepad; xr-spatial-tracking"
+        allowfullscreen
+      ></iframe>
+    </div>`;
+  const closeBtn = container.querySelector('#ti-embed-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      try { soundEngine.playChime([523.25, 392], 0.1, 0.1); } catch (e) { /* noop */ }
+      renderTestInterviewPane(job, container);
+    });
   }
 }

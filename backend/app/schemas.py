@@ -100,7 +100,6 @@ class JobOut(BaseModel):
     is_job_listed: bool
     created_at: datetime
     created_by_name: Optional[str]
-    organisation_name: Optional[str] = None
     resume_analysis_enabled: bool = True
     recruiter_screening_enabled: bool = True
     functional_interview_enabled: bool = True
@@ -136,7 +135,6 @@ class JobDetailOut(BaseModel):
     recruiter_screening_enabled: bool
     functional_interview_enabled: bool
     created_at: datetime
-    organisation_name: Optional[str] = None
     resume_parameters: Optional[dict] = None
     screening_parameters: Optional[dict] = None
     functional_parameters: Optional[dict] = None

@@ -67,34 +67,6 @@ function recentHistory(transcript: any[], limit = 6): string {
     .join('\n');
 }
 
-// The recruiter-authored run-sheet (opening/closing + per-topic segues) the
-// dashboard syncs into JobRole.evaluationCriteria.runbook. Optional everywhere:
-// a missing/malformed runbook just yields the original scripted behaviour.
-type Runbook = { openingLine?: string; closingLine?: string; segueLines?: Record<string, string> };
-function runbookFromSession(session: any): Runbook | null {
-  const ec = session?.jobRole?.evaluationCriteria;
-  if (!ec) return null;
-  try {
-    const parsed = typeof ec === 'string' ? JSON.parse(ec) : ec;
-    const runbook = parsed?.runbook;
-    return runbook && typeof runbook === 'object' ? (runbook as Runbook) : null;
-  } catch {
-    return null;
-  }
-}
-
-// When the next prepared question opens a NEW topic, the avatar speaks the
-// segue authored on the topic being left (topicCategories[0] carries the name).
-// Returns '' when there's no transition or no authored segue — the prepared
-// question is then asked verbatim, exactly as before.
-function topicTransitionSegue(session: any, currentQuestion: any, nextQuestion: any): string {
-  const curTopic = Array.isArray(currentQuestion?.topicCategories) ? currentQuestion.topicCategories[0] : undefined;
-  const nextTopic = Array.isArray(nextQuestion?.topicCategories) ? nextQuestion.topicCategories[0] : undefined;
-  if (!curTopic || !nextTopic || curTopic === nextTopic) return '';
-  const segue = runbookFromSession(session)?.segueLines?.[curTopic];
-  return typeof segue === 'string' ? segue.trim() : '';
-}
-
 async function decideNextTurn(params: {
   questionText: string;
   requiredPoints: DirectorPoint[];
@@ -223,12 +195,7 @@ export async function handleCandidateTranscript(
     interviewPhase = 'follow_up';
     emotionState = 'curious';
   } else if (hasNextQuestion) {
-    const nextQuestion = questions[questionIndex + 1];
-    // Prepend the authored segue when this advance crosses into a new topic; the
-    // prepared question text itself is still asked verbatim (its rubric is keyed
-    // to the exact text, so only a prefix is added — never an edit).
-    const segue = topicTransitionSegue(session, currentQuestion, nextQuestion);
-    aiText = segue ? `${segue} ${nextQuestion.text}` : nextQuestion.text;
+    aiText = questions[questionIndex + 1].text; // prepared question, verbatim
     aiQuestionIndex = questionIndex + 1;
     interviewPhase = 'questioning';
     emotionState = 'curious';

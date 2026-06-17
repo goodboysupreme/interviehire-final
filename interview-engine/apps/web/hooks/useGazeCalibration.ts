@@ -134,11 +134,61 @@ function median(values: number[]): number {
     : sorted[mid]!;
 }
 
+function pointMedian(
+  allPointSamples: PointSamples[],
+  pointId: string,
+  axis: 'offsetX' | 'offsetY',
+): number | null {
+  const point = allPointSamples.find((p) => p.pointId === pointId);
+  if (!point?.samples.length) return null;
+  return median(point.samples.map((sample) => sample[axis]));
+}
+
+function averageFinite(values: Array<number | null | undefined>, fallback = 0): number {
+  const finite = values.filter((value): value is number => Number.isFinite(value));
+  if (!finite.length) return fallback;
+  return finite.reduce((sum, value) => sum + value, 0) / finite.length;
+}
+
+function averageFiniteOrNull(values: Array<number | null | undefined>): number | null {
+  const finite = values.filter((value): value is number => Number.isFinite(value));
+  if (!finite.length) return null;
+  return finite.reduce((sum, value) => sum + value, 0) / finite.length;
+}
+
 function computeResult(allPointSamples: PointSamples[]): CalibrationResult {
-  // Center point gives us the neutral baseline
+  const allX = allPointSamples.flatMap((point) => point.samples.map((sample) => sample.offsetX));
+  const allY = allPointSamples.flatMap((point) => point.samples.map((sample) => sample.offsetY));
+  const fallbackNeutralX = median(allX);
+  const fallbackNeutralY = median(allY);
+
+  // If a center point exists, use it. The current 8-dot calibration does not sample
+  // center, so infer neutral from opposite dot pairs instead.
   const centerData = allPointSamples.find((p) => p.pointId === 'mc');
-  const neutralX = centerData ? median(centerData.samples.map((s) => s.offsetX)) : 0;
-  const neutralY = centerData ? median(centerData.samples.map((s) => s.offsetY)) : 0;
+  const neutralX = centerData
+    ? median(centerData.samples.map((s) => s.offsetX))
+    : averageFinite(
+        [
+          averageFiniteOrNull([pointMedian(allPointSamples, 'tl', 'offsetX'), pointMedian(allPointSamples, 'tr', 'offsetX')]),
+          averageFiniteOrNull([pointMedian(allPointSamples, 'ml', 'offsetX'), pointMedian(allPointSamples, 'mr', 'offsetX')]),
+          averageFiniteOrNull([pointMedian(allPointSamples, 'bl', 'offsetX'), pointMedian(allPointSamples, 'br', 'offsetX')]),
+          pointMedian(allPointSamples, 'tc', 'offsetX'),
+          pointMedian(allPointSamples, 'bc', 'offsetX'),
+        ],
+        fallbackNeutralX,
+      );
+  const neutralY = centerData
+    ? median(centerData.samples.map((s) => s.offsetY))
+    : averageFinite(
+        [
+          averageFiniteOrNull([pointMedian(allPointSamples, 'tl', 'offsetY'), pointMedian(allPointSamples, 'bl', 'offsetY')]),
+          averageFiniteOrNull([pointMedian(allPointSamples, 'tc', 'offsetY'), pointMedian(allPointSamples, 'bc', 'offsetY')]),
+          averageFiniteOrNull([pointMedian(allPointSamples, 'tr', 'offsetY'), pointMedian(allPointSamples, 'br', 'offsetY')]),
+          pointMedian(allPointSamples, 'ml', 'offsetY'),
+          pointMedian(allPointSamples, 'mr', 'offsetY'),
+        ],
+        fallbackNeutralY,
+      );
 
   // For each non-center point, compute how far from neutral
   // Threshold = 70% of the smallest observed deviation across edge points

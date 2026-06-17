@@ -26,9 +26,9 @@ def seed():
         # 1. devasri-tech
         org1 = Organisation(
             org_name="devasri-tech",
-            domain="devasri-tech.interviehire.ai",
-            contact_email="devasri@interviehire.ai",
-            website_link="https://interviehire.ai",
+            domain="devasri-tech.zeko.ai",
+            contact_email="devasri@zeko.ai",
+            website_link="https://zeko.ai",
             location="Remote",
             description="Build the future of technology with us."
         )
@@ -64,7 +64,7 @@ def seed():
         # Org Admin
         admin1 = User(
             name="Devasri",
-            email="devasri@interviehire.ai",
+            email="devasri@zeko.ai",
             designation="Org. Admin",
             user_type=UserType.org_admin,
             status=UserStatus.active,
@@ -74,7 +74,7 @@ def seed():
         # Member 1 (Aditya)
         member1_org1 = User(
             name="Aditya",
-            email="aditya@interviehire.ai",
+            email="aditya@zeko.ai",
             designation="Recruiter",
             user_type=UserType.member,
             status=UserStatus.active,
@@ -84,7 +84,7 @@ def seed():
         # Member 2 (Aditya Member 2)
         member2_org1 = User(
             name="Aditya Colleague",
-            email="aditya_member2@interviehire.ai",
+            email="aditya_member2@zeko.ai",
             designation="Recruiter",
             user_type=UserType.member,
             status=UserStatus.active,

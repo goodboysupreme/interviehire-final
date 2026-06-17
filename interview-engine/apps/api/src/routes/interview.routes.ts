@@ -238,23 +238,16 @@ export async function interviewRoutes(app: FastifyInstance) {
       include: { jobRole: { include: { questions: { where: { isActive: true }, orderBy: { createdAt: 'asc' } } } } },
     });
     const firstQuestion = session.jobRole.questions[0]?.text ?? 'Tell me about your software engineering background.';
-    // Recruiter-authored opening line (synced into evaluationCriteria.runbook).
-    // Spoken before Q1 with no questionIndex, so evaluation pairing (which keys
-    // off ai entries that carry a questionIndex) ignores it. Absent → unchanged.
-    const ec: any = (session.jobRole as any)?.evaluationCriteria;
-    const runbook = ec && typeof ec === 'object' ? ec.runbook : null;
-    const openingLine = runbook && typeof runbook.openingLine === 'string' ? runbook.openingLine.trim() : '';
     const transcript = Array.isArray(session.transcript) ? session.transcript as any[] : [];
     const hasAiQuestion = transcript.some((entry) => entry?.speaker === 'ai');
-    const seeded: any[] = [];
-    if (openingLine) seeded.push({ speaker: 'ai', text: openingLine, timestamp: new Date().toISOString(), kind: 'opening' });
-    seeded.push({ speaker: 'ai', text: firstQuestion, timestamp: new Date().toISOString(), questionIndex: 0 });
-    const updatedTranscript = hasAiQuestion ? transcript : [...transcript, ...seeded];
+    const updatedTranscript = hasAiQuestion
+      ? transcript
+      : [...transcript, { speaker: 'ai', text: firstQuestion, timestamp: new Date().toISOString(), questionIndex: 0 }];
     const updated = await prisma.interviewSession.update({
       where: { id: req.params.id },
       data: { status: 'IN_PROGRESS', startedAt: session.startedAt ?? new Date(), transcript: updatedTranscript as any },
     });
-    return { session: updated, initialQuestion: firstQuestion, openingLine: openingLine || undefined };
+    return { session: updated, initialQuestion: firstQuestion };
   });
   app.get('/sessions/:id/vapi-config', async (req:any) => {
     const session = await prisma.interviewSession.findUniqueOrThrow({where:{id:req.params.id}, include:{company:true,jobRole:{include:{questions:true}}}});
