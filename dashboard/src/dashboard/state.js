@@ -796,7 +796,7 @@ const AppState = {
   team: [
     {
       name: 'Devasri',
-      email: 'devasri@zeko.ai',
+      email: 'devasri@interviehire.ai',
       designation: 'Org. Admin',
       usertype: 'Org. Admin',
       registeredOn: '26 Feb 2026, 05:33 PM',

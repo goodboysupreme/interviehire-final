@@ -1,6 +1,6 @@
 -- Seed default Org. Admin
 INSERT INTO users (id, name, email, designation, user_type, status)
-VALUES ('e7b78912-32a1-4f9e-9d8b-1a2c3d4e5f60', 'Devasri', 'devasri@zeko.ai', 'Org. Admin', 'org_admin', 'active')
+VALUES ('e7b78912-32a1-4f9e-9d8b-1a2c3d4e5f60', 'Devasri', 'devasri@interviehire.ai', 'Org. Admin', 'org_admin', 'active')
 ON CONFLICT (email) DO NOTHING;
 
 -- Seed default jobs
@@ -25,5 +25,5 @@ ON CONFLICT DO NOTHING;
 
 -- Seed organisation settings
 INSERT INTO organisations (org_name, domain, contact_email, website_link, location, description)
-VALUES ('devasri-tech', 'devasri-tech', 'devasri@zeko.ai', 'https://zeko.ai', 'Remote', 'Build the future of technology with us.')
+VALUES ('devasri-tech', 'devasri-tech', 'devasri@interviehire.ai', 'https://interviehire.ai', 'Remote', 'Build the future of technology with us.')
 ON CONFLICT DO NOTHING;
