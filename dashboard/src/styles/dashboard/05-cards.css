@@ -67,6 +67,9 @@
   transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
 }
 .job-kebab-dropdown.open { opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
+/* Lift the card whose kebab menu is open so the dropdown paints above sibling cards
+   (each card has backdrop-filter, creating a stacking context that would otherwise clip it). */
+.job-card.kebab-open { z-index: 50; }
 .kebab-item {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 14px;
   background: none; border: none; color: var(--color-text-secondary); font-size: 0.82rem;

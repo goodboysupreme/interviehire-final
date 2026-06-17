@@ -208,19 +208,25 @@ function initMountBindings() {
 
   window.openJobDescriptionDrawer = (jobId) => openDrawer('view-jd', jobId);
 
+  const closeAllJobKebabs = () => {
+    document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.job-card.kebab-open').forEach(c => c.classList.remove('kebab-open'));
+  };
+
   window.toggleJobKebab = function(btn) {
     const dropdown = btn.nextElementSibling;
     const isOpen = dropdown.classList.contains('open');
-    document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
-    if (!isOpen) dropdown.classList.add('open');
+    closeAllJobKebabs();
+    if (!isOpen) {
+      dropdown.classList.add('open');
+      btn.closest('.job-card')?.classList.add('kebab-open');
+    }
   };
 
-  document.addEventListener('click', () => {
-    document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
-  });
+  document.addEventListener('click', closeAllJobKebabs);
 
   window.handleJobKebab = function(jobId, action) {
-    document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
+    closeAllJobKebabs();
     const job = AppState.jobs.find(j => j.id === jobId);
     if (!job) return;
     switch (action) {
@@ -277,14 +283,25 @@ function initMountBindings() {
         const name = job.cardName || job.roleName;
         const idx = AppState.jobs.findIndex(j => j.id === jobId);
         if (idx === -1) break;
+        const removedJob = AppState.jobs[idx];
+        const removedCandidates = AppState.candidates.filter(c => c.jobApplied === job.roleName || c.jobApplied === job.cardName);
         AppState.jobs.splice(idx, 1);
         AppState.candidates = AppState.candidates.filter(c => c.jobApplied !== job.roleName && c.jobApplied !== job.cardName);
         saveStateToLocalStorage();
+        const restoreJob = () => {
+          AppState.jobs.splice(Math.min(idx, AppState.jobs.length), 0, removedJob);
+          AppState.candidates.push(...removedCandidates);
+          saveStateToLocalStorage();
+          renderJobCards();
+          updateJobsCounters();
+          updateSummaryMetrics();
+          showPremiumToast(`"${name}" restored.`, 'success');
+        };
         setTimeout(() => {
           renderJobCards();
           updateJobsCounters();
           updateSummaryMetrics();
-          showPremiumToast(`"${name}" has been permanently deleted.`, 'success');
+          showPremiumToast(`"${name}" deleted.`, 'success', { label: 'Undo', onClick: restoreJob });
         }, 0);
         break;
       }

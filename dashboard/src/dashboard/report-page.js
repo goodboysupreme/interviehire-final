@@ -673,7 +673,30 @@ async function openCandidateReportPage(candidateId) {
     }
   });
 
+  // Fill the bars in the initially-active (overview) pane.
+  animateBarsIn(root.querySelector('.rp-pane.active'));
+
   soundEngine.playChime([392.0, 523.25, 659.25], 0.15, 0.08);
+}
+
+// Fill report bars in from 0 so they visibly load (mirrors the score-ring trigger).
+// Called for the active pane on open and whenever a tab is shown, so bars in
+// initially-hidden panes still animate when their tab is opened.
+function animateBarsIn(container) {
+  if (!container) return;
+  container.querySelectorAll('.rp-breakdown-fill, .da-dim-fill').forEach(fill => {
+    const target = fill.style.width;
+    if (!target || target === '0%') return;
+    fill.style.width = '0%';
+    requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = target; }));
+  });
+  container.querySelectorAll('.rp-chart-bar').forEach(bar => {
+    bar.style.transformBox = 'fill-box';
+    bar.style.transformOrigin = 'bottom';
+    bar.style.transition = 'transform 0.7s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease';
+    bar.style.transform = 'scaleY(0)';
+    requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.transform = 'scaleY(1)'; }));
+  });
 }
 
 function bindReportPage(candidate, job, analysis, root) {
@@ -688,6 +711,7 @@ function bindReportPage(candidate, job, analysis, root) {
     root.querySelectorAll('.rp-pane').forEach(p => p.classList.toggle('active', p.dataset.rpPane === key));
     if (key !== 'transcript') resetWaveformAudio();
     soundEngine.playClick();
+    animateBarsIn(root.querySelector('.rp-pane.active'));
   };
   root.querySelectorAll('.rp-tab').forEach(tab => {
     tab.addEventListener('click', () => switchTab(tab.dataset.rpTab));

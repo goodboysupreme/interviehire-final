@@ -95,6 +95,10 @@ function renderResumeStagePaneForJob(candidates, job, container) {
           <span class="ra-toolbar-stat pending">${pendingCount} pending</span>
         </div>
         <div class="ra-toolbar-right">
+          ${analysedCount > 0 ? `<button class="btn-ra-reanalyse-all" id="btn-ra-reanalyse-all" title="Re-run analysis on all analysed resumes using the current parameters">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Reanalyse all (${analysedCount})
+          </button>` : ''}
           ${pendingCount > 0 ? `<button class="btn-ra-analyse-all" id="btn-ra-analyse-all">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             Analyse All (${pendingCount})
@@ -244,6 +248,19 @@ function bindResumeAnalysisEvents(job) {
       return;
     }
     runBulkResumeAnalysis(pendingCids, job);
+  });
+
+  const reanalyseAllBtn = document.getElementById('btn-ra-reanalyse-all');
+  reanalyseAllBtn?.addEventListener('click', () => {
+    const analysedCids = [];
+    document.querySelectorAll('.ra-data-table tr[data-cid]').forEach(row => {
+      if (resumeAnalysisCache[row.dataset.cid]) analysedCids.push(row.dataset.cid);
+    });
+    if (analysedCids.length === 0) {
+      showPremiumToast('No analysed resumes to reanalyse yet.', 'info');
+      return;
+    }
+    runBulkResumeAnalysis(analysedCids, job, { force: true });
   });
 }
 
@@ -804,14 +821,16 @@ function renderAnalysisResult(cid, result) {
 // (a 429 silently falls back to the lower-quality local engine), so we cap it.
 const RESUME_ANALYSIS_CONCURRENCY = 4;
 
-async function runBulkResumeAnalysis(candidateIds, job) {
-  const pending = candidateIds.filter(id => !resumeAnalysisCache[id]);
+async function runBulkResumeAnalysis(candidateIds, job, opts = {}) {
+  const force = opts.force === true;
+  // Normal bulk skips already-analysed; reanalyse (force) re-runs them against the new params.
+  const pending = force ? candidateIds.slice() : candidateIds.filter(id => !resumeAnalysisCache[id]);
   if (pending.length === 0) {
     showPremiumToast('All candidates already analysed.', 'info');
     return;
   }
   const total = pending.length;
-  showPremiumToast(`Analysing ${total} candidate${total > 1 ? 's' : ''} (${Math.min(RESUME_ANALYSIS_CONCURRENCY, total)} at a time)…`, 'info');
+  showPremiumToast(`${force ? 'Reanalysing' : 'Analysing'} ${total} candidate${total > 1 ? 's' : ''} (${Math.min(RESUME_ANALYSIS_CONCURRENCY, total)} at a time)…`, 'info');
 
   // Bounded-concurrency worker pool: each worker pulls the next candidate off a
   // shared cursor, so at most RESUME_ANALYSIS_CONCURRENCY calls are ever in
@@ -825,7 +844,7 @@ async function runBulkResumeAnalysis(candidateIds, job) {
       const cid = pending[cursor];
       cursor += 1;
       try {
-        const ok = await runResumeAnalysis(cid, job, { quiet: true });
+        const ok = await runResumeAnalysis(cid, job, { quiet: true, force });
         if (ok === true) done += 1; else failed += 1;
       } catch {
         failed += 1;
@@ -836,10 +855,11 @@ async function runBulkResumeAnalysis(candidateIds, job) {
   const workerCount = Math.min(RESUME_ANALYSIS_CONCURRENCY, pending.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
+  const verb = force ? 'Reanalysis' : 'Bulk analysis';
   showPremiumToast(
     failed
-      ? `Bulk analysis complete: ${done}/${total} succeeded, ${failed} failed.`
-      : `Bulk analysis complete: all ${total} succeeded.`,
+      ? `${verb} complete: ${done}/${total} succeeded, ${failed} failed.`
+      : `${verb} complete: all ${total} succeeded.`,
     failed ? 'info' : 'success',
   );
 }
@@ -951,48 +971,86 @@ function toggleResumeCriteriaEdit(job) {
   }
 }
 
-function openScheduleModal(candidateName, mode, callback) {
+const SCHEDULE_TIMEZONES = [
+  'Asia/Kolkata (UTC+05:30)',
+  'Asia/Dubai (UTC+04:00)',
+  'Asia/Singapore (UTC+08:00)',
+  'Asia/Tokyo (UTC+09:00)',
+  'Europe/London (UTC+00:00)',
+  'Europe/Berlin (UTC+01:00)',
+  'America/New_York (UTC-05:00)',
+  'America/Chicago (UTC-06:00)',
+  'America/Los_Angeles (UTC-08:00)',
+  'Australia/Sydney (UTC+11:00)',
+];
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+function toLocalInputValue(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+function formatSlot(dtLocal) {
+  if (!dtLocal) return '';
+  const d = new Date(dtLocal);
+  if (isNaN(d.getTime())) return dtLocal;
+  return d.toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+// opts: { mode: 'schedule' | 'reschedule', name, email, slotTime, count }
+// callback receives { start, end, timezone, slot } (slot is a friendly formatted start).
+function openScheduleModal(opts, callback) {
+  if (typeof opts === 'string') opts = { name: opts, mode: arguments[1] }, callback = arguments[2];
+  const { mode = 'schedule', name = 'Candidate', email = '', slotTime = '', count = 1 } = opts || {};
+  const isBulk = count > 1;
+  const title = mode === 'reschedule' ? 'Reschedule Interview' : "Schedule Candidate's Window";
+
   const existing = document.getElementById('schedule-modal-overlay');
   if (existing) existing.remove();
   const overlay = document.createElement('div');
   overlay.id = 'schedule-modal-overlay';
   overlay.className = 'schedule-modal-overlay';
-  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-  const dateStr = tomorrow.toISOString().split('T')[0];
+
+  const start = new Date(); start.setDate(start.getDate() + 1); start.setHours(10, 0, 0, 0);
+  const end = new Date(start.getTime() + 30 * 60000);
+
+  const ro = (label, value) => `<div class="sched-readonly-row"><span class="sched-ro-label">${label}</span><span class="sched-ro-value">${value}</span></div>`;
+  const contextRows = isBulk
+    ? ro('Candidates:', `${count} selected`)
+    : ro('Candidate Name:', escapeHTML(name)) +
+      (email ? ro('Candidate Email:', escapeHTML(email)) : '') +
+      ro('Candidate Slot Time:', slotTime ? escapeHTML(slotTime) : '—');
+
   overlay.innerHTML = `
     <div class="schedule-modal">
-      <h3>${mode === 'reschedule' ? 'Reschedule' : 'Schedule'} Interview — ${candidateName}</h3>
+      <button class="sched-close" id="sched-cancel" aria-label="Close">✕</button>
+      <h3>${title}</h3>
+      ${contextRows}
       <div class="schedule-form-group">
-        <label>Date</label>
-        <input type="date" id="sched-date" value="${dateStr}" />
-      </div>
-      <div class="schedule-form-group">
-        <label>Time</label>
-        <input type="time" id="sched-time" value="10:00" />
-      </div>
-      <div class="schedule-form-group">
-        <label>Duration</label>
-        <select id="sched-duration" style="padding:8px 12px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:8px;color:var(--color-text-primary);font-size:0.82rem;outline:none;">
-          <option value="15">15 minutes</option>
-          <option value="30" selected>30 minutes</option>
-          <option value="45">45 minutes</option>
-          <option value="60">60 minutes</option>
+        <label>Time Zone</label>
+        <select id="sched-tz" class="sched-tz-select">
+          ${SCHEDULE_TIMEZONES.map((tz, i) => `<option value="${escapeHTML(tz)}" ${i === 0 ? 'selected' : ''}>${escapeHTML(tz)}</option>`).join('')}
         </select>
       </div>
-      <div class="schedule-modal-actions">
-        <button class="btn-schedule-cancel" id="sched-cancel">Cancel</button>
-        <button class="btn-schedule-confirm" id="sched-confirm">Confirm</button>
+      <div class="schedule-form-group">
+        <label>Enter Date &amp; Time</label>
+        <div class="sched-range-row">
+          <input type="datetime-local" id="sched-start" value="${toLocalInputValue(start)}" />
+          <span class="sched-range-sep">to</span>
+          <input type="datetime-local" id="sched-end" value="${toLocalInputValue(end)}" />
+        </div>
       </div>
+      <button class="btn-schedule-continue" id="sched-confirm">Continue</button>
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.getElementById('sched-cancel').addEventListener('click', () => overlay.remove());
   document.getElementById('sched-confirm').addEventListener('click', () => {
-    const date = document.getElementById('sched-date').value;
-    const time = document.getElementById('sched-time').value;
+    const startV = document.getElementById('sched-start').value;
+    const endV = document.getElementById('sched-end').value;
+    const timezone = document.getElementById('sched-tz').value;
+    if (!startV) { showPremiumToast('Please pick a start time.', 'error'); return; }
+    if (endV && endV < startV) { showPremiumToast('End time must be after the start time.', 'error'); return; }
     overlay.remove();
-    if (callback) callback(date, time);
-    showPremiumToast(`Interview ${mode === 'reschedule' ? 'rescheduled' : 'scheduled'} for ${candidateName} on ${date} at ${time}.`, 'success');
+    if (callback) callback({ start: startV, end: endV, timezone, slot: formatSlot(startV) });
     soundEngine.playChime([523.25, 659.25], 0.15, 0.08);
   });
 }

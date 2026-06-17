@@ -1121,39 +1121,47 @@ function addCandidateToAppState(name, email, phone, job, resumeText) {
   return candId;
 }
 
-function showPremiumToast(message, type = 'success') {
+function showPremiumToast(message, type = 'success', action = null) {
   const existing = document.querySelector('.toast-notification');
   if (existing) {
     existing.remove();
   }
-  
+
   const toast = document.createElement('div');
   toast.className = `toast-notification ${type}`;
-  
+
   let iconSvg = '';
   if (type === 'success') {
     iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
   } else {
     iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
   }
-  
+
   toast.innerHTML = `
     <span class="toast-icon">${iconSvg}</span>
     <span class="toast-message">${escapeHTML(message)}</span>
   `;
-  
+
+  const dismiss = () => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 450);
+  };
+
+  if (action && action.label && typeof action.onClick === 'function') {
+    const btn = document.createElement('button');
+    btn.className = 'toast-action';
+    btn.textContent = action.label;
+    btn.addEventListener('click', () => { action.onClick(); dismiss(); });
+    toast.appendChild(btn);
+  }
+
   document.body.appendChild(toast);
-  
+
   requestAnimationFrame(() => {
     toast.classList.add('show');
   });
-  
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => {
-      toast.remove();
-    }, 450);
-  }, 2800);
+
+  setTimeout(dismiss, action ? 6000 : 2800);
 }
 
 

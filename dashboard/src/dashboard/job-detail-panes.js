@@ -357,7 +357,7 @@ function renderJobDetailPanes(job) {
                     <td><span class="source-badge">${sourceIcon} ${c.source || '—'}</span></td>
                     <td>${screeningBadge(c.recruiterScreening)}</td>
                     <td>
-                      <select class="action-select-status">
+                      <select class="action-select-status" data-cand-id="${c.id}">
                         <option value="">Select Sta...</option>
                         <option value="advance">Advance</option>
                         <option value="reject">Reject</option>
@@ -543,7 +543,7 @@ function renderJobDetailPanes(job) {
               }
             });
             saveStateToLocalStorage();
-            renderJobDetailPanes(job);
+            refreshAfterStageChange();
             showPremiumToast(`Advanced ${ids.length} candidate(s) to next stage.`, 'success');
           } else if (action === 'reject') {
             ids.forEach(cid => {
@@ -551,20 +551,21 @@ function renderJobDetailPanes(job) {
               if (cand) cand.status = 'Rejected';
             });
             saveStateToLocalStorage();
-            renderJobDetailPanes(job);
+            refreshAfterStageChange();
             showPremiumToast(`Rejected ${ids.length} candidate(s).`, 'success');
           } else if (action === 'schedule' || action === 'reschedule') {
-            openScheduleModal(label, action, (date, time) => {
+            openScheduleModal({ mode: action, name: label, count: ids.length }, ({ start, end, timezone, slot }) => {
               ids.forEach(cid => {
                 const cand = AppState.candidates.find(c => c.id === cid);
                 if (cand) {
-                  cand.attemptedAt = `${date} ${time}`;
+                  cand.attemptedAt = slot;
+                  cand.scheduledWindow = { start, end, timezone };
                   cand.interviewStatus = action === 'reschedule' ? 'Incomplete' : 'Not Started';
                 }
               });
               saveStateToLocalStorage();
               renderJobDetailPanes(job);
-              showPremiumToast(`${action === 'schedule' ? 'Scheduled' : 'Rescheduled'} ${ids.length} candidate(s) to ${date} at ${time}.`, 'success');
+              showPremiumToast(`${action === 'schedule' ? 'Scheduled' : 'Rescheduled'} ${ids.length} candidate(s) for ${slot}.`, 'success');
             });
           } else if (action === 'export') {
             triggerExcelExport('candidates');
@@ -589,18 +590,24 @@ function renderJobDetailPanes(job) {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         soundEngine.playClick();
-        const name = btn.closest('tr')?.querySelector('.cand-name-link')?.textContent?.trim() || 'Candidate';
         const mode = btn.classList.contains('btn-reschedule') ? 'reschedule' : 'schedule';
         const candId = btn.getAttribute('data-candidate-id');
-        openScheduleModal(name, mode, (date, time) => {
-          const cand = AppState.candidates.find(c => c.id === candId);
-          if (cand) {
-            cand.interviewStatus = mode === 'reschedule' ? 'Incomplete' : 'Not Started';
-            cand.attemptedAt = `${date} ${time}`;
-            saveStateToLocalStorage();
-            renderJobDetailPanes(job);
+        const cand = AppState.candidates.find(c => c.id === candId);
+        const name = cand?.name || btn.closest('tr')?.querySelector('.cand-name-link')?.textContent?.trim() || 'Candidate';
+        openScheduleModal(
+          { mode, name, email: cand?.email || '', slotTime: cand?.attemptedAt || '' },
+          ({ start, end, timezone, slot }) => {
+            const c2 = AppState.candidates.find(c => c.id === candId);
+            if (c2) {
+              c2.interviewStatus = mode === 'reschedule' ? 'Incomplete' : 'Not Started';
+              c2.attemptedAt = slot;
+              c2.scheduledWindow = { start, end, timezone };
+              saveStateToLocalStorage();
+              renderJobDetailPanes(job);
+              showPremiumToast(`${mode === 'reschedule' ? 'Rescheduled' : 'Scheduled'} ${c2.name} for ${slot}.`, 'success');
+            }
           }
-        });
+        );
       });
     });
 
@@ -663,6 +670,44 @@ function renderJobDetailPanes(job) {
   }
 }
 
+// Recompute pipelines + refresh the job-detail tab counts, funnels and panes.
+// Shared by the single-candidate path (updateCandidateStatus) and the bulk
+// advance/reject path so stage counts never go stale after a stage change.
+function refreshAfterStageChange() {
+  recalculateJobPipelines();
+  updateSummaryMetrics();
+  renderAnalyticsTable();
+
+  const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
+  if (activeJob) {
+    const elScreening = document.getElementById('jd-count-screening');
+    if (elScreening) elScreening.textContent = activeJob.pipeline.screening;
+    const elFunctional = document.getElementById('jd-count-functional');
+    if (elFunctional) {
+      elFunctional.textContent = activeJob.pipeline.screening > 0
+        ? `${activeJob.pipeline.functional} of ${activeJob.pipeline.screening}`
+        : activeJob.pipeline.functional;
+    }
+
+    renderFunnelStages(activeJob);
+    renderFunnelInsights(activeJob);
+
+    const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(
+      c => c.jobApplied === activeJob.roleName || c.jobApplied === activeJob.cardName
+    );
+    drawFunnelSVG(activeJob, jobCandidates);
+    drawScoreDistributionSVG(activeJob, jobCandidates);
+
+    renderJobDetailPanes(activeJob);
+  }
+
+  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
+    renderKanbanBoard();
+  } else {
+    renderJobCards();
+  }
+}
+
 function updateCandidateStatus(candId, newStatus) {
   const candidate = AppState.candidates.find(c => c.id === candId);
   if (!candidate) return;
@@ -685,35 +730,7 @@ function updateCandidateStatus(candId, newStatus) {
     soundEngine.playChime([329.63, 440.00, 523.25], 0.2, 0.08);
   }
   
-  recalculateJobPipelines();
-  updateSummaryMetrics();
-  renderAnalyticsTable();
-  
-  const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
-  if (activeJob) {
-    document.getElementById('jd-count-screening').textContent = activeJob.pipeline.screening;
-    const funcLabel = activeJob.pipeline.screening > 0
-      ? `${activeJob.pipeline.functional} of ${activeJob.pipeline.screening}`
-      : activeJob.pipeline.functional;
-    document.getElementById('jd-count-functional').textContent = funcLabel;
-    
-    renderFunnelStages(activeJob);
-    renderFunnelInsights(activeJob);
-    
-    const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(
-      c => c.jobApplied === activeJob.roleName || c.jobApplied === activeJob.cardName
-    );
-    drawFunnelSVG(activeJob, jobCandidates);
-    drawScoreDistributionSVG(activeJob, jobCandidates);
-
-    renderJobDetailPanes(activeJob);
-  }
-  
-  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
-    renderKanbanBoard();
-  } else {
-    renderJobCards();
-  }
+  refreshAfterStageChange();
 }
 
 

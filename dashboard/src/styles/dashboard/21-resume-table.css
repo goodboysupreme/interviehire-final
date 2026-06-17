@@ -158,6 +158,33 @@
   background: linear-gradient(135deg, rgba(var(--color-gold-rgb), 0.25), rgba(var(--color-gold-rgb), 0.12));
   transform: translateY(-1px);
 }
+.ra-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Secondary (neutral) variant so it reads as distinct from the primary "Analyse All". */
+.btn-ra-reanalyse-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: var(--spring-fast);
+}
+.btn-ra-reanalyse-all:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--glass-border-hover);
+  color: var(--color-text-primary);
+  transform: translateY(-1px);
+}
+.btn-ra-reanalyse-all svg { stroke: currentColor; }
 
 /* RA Recommendation Badge */
 .ra-rec-badge {
