@@ -8,6 +8,7 @@ import { applyDateRangeGlobally, renderAnalyticsTable, renderJobCards, updateSum
 import { isGarbageText, resumeIdentityCache, resumeTextCache, runBulkResumeAnalysis } from './resume-analysis.js';
 import { soundEngine } from './sound.js';
 import { AppState } from './state.js';
+import { pushUrl } from './url-sync.js';
 
 // ============================================================
 // SOURCING VIEW CONTROLLER & MASS INTAKE LOGIC
@@ -401,6 +402,7 @@ function navigateToSourcing(jobId) {
 
   AppState.activeJobId = jobId;
   AppState.activeTab = 'sourcing';
+  pushUrl(`/dashboard/sourcing/${jobId}`);
 
   // Highlight Jobs sidebar
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {

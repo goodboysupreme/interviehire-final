@@ -19,6 +19,7 @@ import { renderKanbanBoard, resetWaveformAudio, startSwarmLogs } from './kanban-
 import { renderAnalyticsTable, renderJobCards, renderTeamTable, updateSummaryMetrics } from './render-views.js';
 import { soundEngine } from './sound.js';
 import { AppState, generateJobId } from './state.js';
+import { pushUrl } from './url-sync.js';
 
 // ==========================================
 // VIEW SWITCHER ROUTING
@@ -29,6 +30,19 @@ import { AppState, generateJobId } from './state.js';
 function navigateToTab(tabId) {
   AppState.activeTab = tabId;
   AppState.activeSubtab = '';
+
+  const TAB_URLS = {
+    'jobs':      '/dashboard/jobs',
+    'analytics': '/dashboard/analytics',
+    'swarm':     '/dashboard/swarm',
+    'team':      '/dashboard/team',
+    'career':    '/dashboard/career',
+    'settings':  '/dashboard/settings/general',
+  };
+  const url = TAB_URLS[tabId];
+  if (url) {
+    pushUrl(url);
+  }
 
   // Update Sidebar Active state
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -292,6 +306,14 @@ const createJobUpload = { fileName: null, text: null, file: null };
 function navigateToSubtab(subtabId) {
   AppState.activeTab = 'settings';
   AppState.activeSubtab = subtabId;
+
+  const SUBTAB_URLS = {
+    'settings-general': '/dashboard/settings/general',
+  };
+  const url = SUBTAB_URLS[subtabId];
+  if (url) {
+    pushUrl(url);
+  }
 
   // Make sure settings parent menu node is visually highlighted and open
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {

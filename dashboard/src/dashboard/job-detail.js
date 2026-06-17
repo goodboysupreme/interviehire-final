@@ -8,6 +8,7 @@ import { soundEngine } from './sound.js';
 import { AppState } from './state.js';
 import { isApiMode, apiFetchApplicants } from './api.js';
 import { showPremiumToast } from './sourcing.js';
+import { pushUrl } from './url-sync.js';
 
 // ==========================================
 // JOB DETAIL VIEW
@@ -19,6 +20,8 @@ function navigateToJobDetail(jobId) {
 
   AppState.activeJobId = jobId;
   AppState.activeTab = 'job-detail';
+  pushUrl(`/dashboard/jobs/${jobId}`);
+
 
   // Sidebar: keep Jobs highlighted as parent
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {

@@ -10,6 +10,8 @@ import { soundEngine } from './sound.js';
 import { navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
 import { ensureFunctionalBlueprint, computeCalibration } from './blueprint-engine.js';
+import { pushUrl } from './url-sync.js';
+
 
 // ==========================================
 // JOB FLOW PIPELINE VIEW
@@ -227,6 +229,7 @@ function openJobFlowView(jobId, showAddCandidates = false) {
 
   AppState.activeTab = 'job-flow';
   AppState.activeJobId = jobId;
+  pushUrl(`/dashboard/jobs/${jobId}/flow`);
 
   // Sidebar: keep Jobs highlighted as parent
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {

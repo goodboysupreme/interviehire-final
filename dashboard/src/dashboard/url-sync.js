@@ -34,7 +34,8 @@ const SUBTAB_URLS = {
  * Debounced to avoid double-push from simultaneous React + vanilla nav.
  */
 let _pushPending = false;
-function pushUrl(url) {
+export function pushUrl(url) {
+  if (typeof window === 'undefined') return;
   if (_pushPending) return;
   if (window.location.pathname === url) return;
   _pushPending = true;
@@ -47,6 +48,7 @@ function pushUrl(url) {
     _pushPending = false;
   });
 }
+
 
 /**
  * Patches window.navigateToJobDetail to also update the URL.

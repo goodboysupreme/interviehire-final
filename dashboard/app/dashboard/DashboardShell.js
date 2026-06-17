@@ -58,7 +58,8 @@ function navigateToPath(path) {
   }
 
   if (sub === 'jobs') {
-    const jobId = segments[2];
+    const rawJobId = segments[2];
+    const jobId = rawJobId && rawJobId.includes('--') ? rawJobId.split('--').pop() : rawJobId;
     const subSub = segments[3];
     if (jobId) {
       if (subSub === 'flow') {
@@ -70,7 +71,8 @@ function navigateToPath(path) {
       window.navigateToTab?.('jobs');
     }
   } else if (sub === 'sourcing') {
-    const jobId = segments[2];
+    const rawJobId = segments[2];
+    const jobId = rawJobId && rawJobId.includes('--') ? rawJobId.split('--').pop() : rawJobId;
     if (jobId) {
       window.navigateToSourcing?.(jobId);
     }
