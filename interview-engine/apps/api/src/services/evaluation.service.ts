@@ -110,7 +110,7 @@ export async function evaluateInterview(sessionId: string): Promise<EvalCandidat
   const report = aggregateEvalCandidateReport(context, evaluationsWithAuthorship);
   const proctoringSummary = {
     eventCount: session.proctoringLogs.length,
-    criticalOrHighCount: session.proctoringLogs.filter((log) => ['CRITICAL', 'HIGH'].includes(log.severity)).length,
+    criticalOrHighCount: session.proctoringLogs.filter((log: any) => ['CRITICAL', 'HIGH'].includes(log.severity)).length,
   };
   const finalReport = {
     ...report,
