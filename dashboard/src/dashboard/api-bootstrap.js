@@ -27,6 +27,9 @@ async function hydrateJobs() {
   try { updateJobsCounters(); } catch {}
   try { updateSummaryMetrics(); } catch {}
   showPremiumToast(`Loaded ${jobs.length} job${jobs.length !== 1 ? 's' : ''} from the live backend.`, 'success');
+  if (window.__ihNavigateToPath) {
+    window.__ihNavigateToPath(window.location.pathname);
+  }
 }
 
 function showLoginOverlay() {

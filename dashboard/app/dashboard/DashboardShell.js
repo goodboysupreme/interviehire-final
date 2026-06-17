@@ -105,8 +105,10 @@ export default function DashboardShell({ children }) {
     window.__ihPushState = (url) => {
       router.push(url, { scroll: false });
     };
+    window.__ihNavigateToPath = navigateToPath;
     return () => {
       delete window.__ihPushState;
+      delete window.__ihNavigateToPath;
     };
   }, [router]);
 
