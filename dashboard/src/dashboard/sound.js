@@ -1,7 +1,7 @@
 import { window } from './runtime.js';
 
 // ==========================================
-// AUDIO SYNTHESIZER ENGINE (Synced with main.js)
+// AUDIO SYNTHESIZER ENGINE
 // ==========================================
 class SoundEngine {
   constructor() {
