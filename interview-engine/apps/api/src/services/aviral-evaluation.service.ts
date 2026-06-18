@@ -40,13 +40,14 @@ type ParsedGuidance = {
 
 const EVALUATION_CONCURRENCY = 3;
 
-// Multi-judge consensus: grade each answer JUDGE_COUNT times and take the median
-// per dimension to damp LLM scoring noise (self-consistency). A slightly higher
-// temperature gives the judges genuine sampling variance to vote over. Set
-// DEEPSEEK_JUDGE_COUNT=1 to restore single-pass grading.
-const JUDGE_COUNT = Math.max(1, Math.min(5, Math.round(Number(process.env.DEEPSEEK_JUDGE_COUNT || 3))));
+// Grading defaults to a single deterministic judge: cheapest (one call per answer)
+// and reproducible (temperature 0), so the same interview scores the same every run
+// — the whole point of a grader. Opt back into multi-judge self-consistency (median
+// of N warm samples, damps one-off LLM noise) with DEEPSEEK_JUDGE_COUNT=3 plus a warm
+// DEEPSEEK_JUDGE_TEMPERATURE, at N× the token cost.
+const JUDGE_COUNT = Math.max(1, Math.min(5, Math.round(Number(process.env.DEEPSEEK_JUDGE_COUNT || 1))));
 const JUDGE_TEMPERATURE = Number(process.env.DEEPSEEK_JUDGE_TEMPERATURE || 0.35);
-const SINGLE_JUDGE_TEMPERATURE = 0.1;
+const SINGLE_JUDGE_TEMPERATURE = 0;
 // Inter-judge overallScore spread (max-min) above this means the judges disagree
 // materially, so we downgrade the answer's confidence one notch.
 const JUDGE_DISAGREEMENT_SPREAD = 20;
@@ -189,10 +190,20 @@ async function evaluateInputsWithDeepSeek(
   const workerCount = Math.min(EVALUATION_CONCURRENCY, tasks.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
-  // Preserve original answer order; drop answers where every judge failed.
-  return judgments
-    .filter((judges) => judges.length > 0)
-    .map((judges) => (judges.length === 1 ? judges[0] : mergeEvaluationsByMedian(judges)));
+  // Every answer must be scored the same way on every run. If an answer's judges all
+  // failed (after retries), fail loudly instead of silently dropping it — a candidate
+  // overall score aggregated over a shrinking subset of answers is the root cause of
+  // "irregular" reports. A retryable error beats a wrong hire/no-hire decision.
+  const ungraded = inputs.filter((_, i) => judgments[i].length === 0);
+  if (ungraded.length > 0) {
+    throw new Error(
+      `Evaluation incomplete: ${ungraded.length}/${inputs.length} answers could not be graded ` +
+        `(${ungraded.map((input) => input.answerId).join(', ')}). Refusing to persist a partial report.`,
+    );
+  }
+
+  // Preserve original answer order.
+  return judgments.map((judges) => (judges.length === 1 ? judges[0] : mergeEvaluationsByMedian(judges)));
 }
 
 async function evaluateSingleInput(
@@ -200,28 +211,34 @@ async function evaluateSingleInput(
   input: CandidateResponseInput,
   temperature: number = SINGLE_JUDGE_TEMPERATURE,
 ): Promise<ResponseEvaluation | null> {
-  try {
-    const prompt = buildAnswerEvaluationPrompt(context, input);
-    const raw = await callDeepSeekJson<ResponseEvaluation>({
-      systemInstruction:
-        'You are a rigorous, fair technical interview evaluator. Return strict JSON exactly matching the requested ResponseEvaluation schema.',
-      prompt,
-      maxOutputTokens: Number(process.env.DEEPSEEK_EVALUATION_MAX_TOKENS || 12000),
-      temperature,
-    });
+  const prompt = buildAnswerEvaluationPrompt(context, input);
 
-    const result = validateResponseEvaluation({
-      ...raw,
-      answerId: raw.answerId || input.answerId,
-      questionId: raw.questionId || input.question.questionId,
-      questionOrigin: input.question.questionOrigin,
-    });
+  // One retry absorbs a transient timeout or a single bad-JSON blip so it doesn't
+  // shrink the judge panel — or, at JUDGE_COUNT=1, silently drop the whole answer.
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const raw = await callDeepSeekJson<ResponseEvaluation>({
+        systemInstruction:
+          'You are a rigorous, fair technical interview evaluator. Return strict JSON exactly matching the requested ResponseEvaluation schema.',
+        prompt,
+        maxOutputTokens: Number(process.env.DEEPSEEK_EVALUATION_MAX_TOKENS || 12000),
+        temperature,
+      });
 
-    return result.normalized ?? null;
-  } catch (error) {
-    console.error(`Aviral evaluation failed for answer ${input.answerId}. Skipping.`, error);
-    return null;
+      const result = validateResponseEvaluation({
+        ...raw,
+        answerId: raw.answerId || input.answerId,
+        questionId: raw.questionId || input.question.questionId,
+        questionOrigin: input.question.questionOrigin,
+      });
+
+      if (result.normalized) return result.normalized;
+      console.error(`Aviral evaluation attempt ${attempt}/2 for answer ${input.answerId} returned invalid JSON.`);
+    } catch (error) {
+      console.error(`Aviral evaluation attempt ${attempt}/2 failed for answer ${input.answerId}.`, error);
+    }
   }
+  return null;
 }
 
 // ── Multi-judge consensus merge ────────────────────────────────────────────────
