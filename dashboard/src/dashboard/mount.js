@@ -1264,8 +1264,7 @@ Return ONLY valid JSON:
         ], true);
 
         const parsed = parseAIJson(response);
-        const newJob = {
-          id: generateJobId(),
+        const jobDraft = {
           roleName: parsed.roleName,
           cardName: parsed.cardName || parsed.roleName,
           created: new Date().toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
@@ -1275,14 +1274,22 @@ Return ONLY valid JSON:
           createdBy: globalThis.IH_USER_NAME || 'You',
           description: parsed.description || textToProcess.slice(0, 500),
           questions: [],
-          pipeline: { total: 0, resume: 0, screening: 0, functional: 0 }
+          pipeline: { total: 0, resume: 0, screening: 0, functional: 0 },
+          pipelineConfig: { resumeAnalysis: { enabled: true }, recruiterScreening: { enabled: true }, functionalInterview: { enabled: true } },
         };
+        // api mode: create on the backend first so the job (and the AI blueprint
+        // generated below) persists; local mode keeps a local id.
+        const newJob = isApiMode() ? await apiCreateJob(jobDraft) : { ...jobDraft, id: generateJobId() };
         AppState.jobs.unshift(newJob);
         saveStateToLocalStorage();
 
         btnContinue.innerHTML = `<div class="spinner-mini" style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin-mini 0.6s linear infinite;margin-right:6px;vertical-align:middle;"></div> Generating interview pipeline...`;
 
         await enrichJobWithAI(newJob, textToProcess);
+        if (newJob._backend) {
+          try { await apiPatchJobParameters(newJob.id, newJob); }
+          catch (e) { console.warn('Job created but blueprint sync failed:', e); }
+        }
 
         showPremiumToast(`Job "${parsed.roleName}" created with AI-generated pipeline.`, "success");
         soundEngine.playChime([329.63, 392, 523.25, 659.25], 0.2, 0.08);

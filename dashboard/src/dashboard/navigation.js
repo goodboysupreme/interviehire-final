@@ -20,7 +20,7 @@ import { renderAnalyticsTable, renderJobCards, renderTeamTable, updateSummaryMet
 import { soundEngine } from './sound.js';
 import { AppState, generateJobId } from './state.js';
 import { pushUrl } from './url-sync.js';
-import { isApiMode, apiFetchTeam, apiFetchUsageCandidates, apiFetchOrganisation } from './api.js';
+import { isApiMode, apiFetchTeam, apiFetchUsageCandidates, apiFetchOrganisation, apiCreateJob, apiPatchJobParameters } from './api.js';
 
 // ==========================================
 // VIEW SWITCHER ROUTING
@@ -312,8 +312,7 @@ If you need more info, respond ONLY with this JSON (no extra text):
     const parsed = parseAIJson(response);
 
     if (parsed.ready) {
-      const newJob = {
-        id: generateJobId(),
+      const jobDraft = {
         roleName: parsed.roleName,
         cardName: parsed.cardName || parsed.roleName,
         created: new Date().toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
@@ -323,8 +322,11 @@ If you need more info, respond ONLY with this JSON (no extra text):
         createdBy: globalThis.IH_USER_NAME || 'You',
         description: parsed.description,
         questions: [],
-        pipeline: { total: 0, resume: 0, screening: 0, functional: 0 }
+        pipeline: { total: 0, resume: 0, screening: 0, functional: 0 },
+        pipelineConfig: { resumeAnalysis: { enabled: true }, recruiterScreening: { enabled: true }, functionalInterview: { enabled: true } },
       };
+      // api mode: persist to the backend first; local mode keeps a local id.
+      const newJob = isApiMode() ? await apiCreateJob(jobDraft) : { ...jobDraft, id: generateJobId() };
       AppState.jobs.unshift(newJob);
       saveStateToLocalStorage();
       appendAriaMessage(`Great! I've created "${parsed.roleName}". Now generating your screening criteria, interview questions, and pipeline — hang tight...`, 'aria');
@@ -332,6 +334,10 @@ If you need more info, respond ONLY with this JSON (no extra text):
 
       try {
         await enrichJobWithAI(newJob, parsed.description);
+        if (newJob._backend) {
+          try { await apiPatchJobParameters(newJob.id, newJob); }
+          catch (e) { console.warn('Job created but blueprint sync failed:', e); }
+        }
         appendAriaMessage(`Done! Your full interview pipeline is ready. Taking you there now...`, 'aria');
         soundEngine.playChime([523.25, 659.25, 783.99], 0.2, 0.08);
         setTimeout(() => openJobFlowView(newJob.id, true), 1200);
