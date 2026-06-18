@@ -8,7 +8,7 @@ import { MonitorUp, ShieldCheck, Video } from 'lucide-react';
 import type { CalibrationResult } from '@/hooks/useGazeCalibration';
 import { roomStyles } from './roomStyles';
 
-const AVATAR_URL = process.env.NEXT_PUBLIC_AVATAR_URL || 'http://localhost:80';
+const AVATAR_URL = process.env.NEXT_PUBLIC_AVATAR_URL || '/interview/avatar';
 
 function withPixelStreamingParams(rawUrl: string) {
   try {
