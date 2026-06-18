@@ -1,5 +1,6 @@
 import { document } from './runtime.js';
 import { saveStateToLocalStorage } from './ai-api.js';
+import { scheduleJobSave } from './api.js';
 import { soundEngine } from './sound.js';
 import { AppState } from './state.js';
 
@@ -268,6 +269,7 @@ function bindScoringEditor(job, container) {
       const group = btn.dataset.group;
       criteria[group].splice(parseInt(btn.dataset.idx), 1);
       saveStateToLocalStorage();
+      scheduleJobSave(job);
       renderScoringEditor(job, container);
       soundEngine.playClick();
     });
@@ -280,6 +282,7 @@ function bindScoringEditor(job, container) {
       if (!val) return;
       criteria[input.dataset.group].push(val);
       saveStateToLocalStorage();
+      scheduleJobSave(job);
       container.dataset.expanded = 'true';
       renderScoringEditor(job, container);
       container.querySelector(`.sce-chip-input[data-group="${input.dataset.group}"]`)?.focus();
@@ -303,6 +306,7 @@ function bindScoringEditor(job, container) {
       config.customCriteria.splice(parseInt(btn.closest('.sce-custom-card').dataset.idx), 1);
       job.scoringConfig = config;
       saveStateToLocalStorage();
+      scheduleJobSave(job);
       renderScoringEditor(job, container);
     });
   });
@@ -313,6 +317,7 @@ function bindScoringEditor(job, container) {
   container.querySelector('#sce-reset')?.addEventListener('click', () => {
     job.scoringConfig = JSON.parse(JSON.stringify(DEFAULT_SCORING_CONFIG));
     saveStateToLocalStorage();
+    scheduleJobSave(job);
     renderScoringEditor(job, container);
     soundEngine.playClick();
   });
@@ -340,6 +345,7 @@ function bindScoringEditor(job, container) {
       customCriteria,
     };
     saveStateToLocalStorage();
+    scheduleJobSave(job);
     renderScoringEditor(job, container);
     const { showPremiumToast } = await import('./sourcing.js');
     showPremiumToast('Scoring config saved — next analyses will use it.', 'success');

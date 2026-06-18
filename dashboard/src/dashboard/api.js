@@ -61,6 +61,18 @@ export async function apiPatchJobParameters(id, job) {
   const body = mapJobToParametersPayload(job);
   return request(`/jobs/${id}/parameters`, { method: 'PATCH', body });
 }
+
+// Debounced backend autosave for job parameters (scoring config, criteria, flow,
+// questions). Any feature that mutates a job calls this right after
+// saveStateToLocalStorage(); no-op outside API mode or for local-only jobs.
+const _jobSaveTimers = {};
+export function scheduleJobSave(job) {
+  if (getDataSource() !== 'api' || !job || !job._backend || !job.id) return;
+  clearTimeout(_jobSaveTimers[job.id]);
+  _jobSaveTimers[job.id] = setTimeout(() => {
+    apiPatchJobParameters(job.id, job).catch((e) => console.warn('Job sync failed:', e));
+  }, 800);
+}
 export async function apiFetchApplicants(jobId, tab = 'functional') {
   const data = await request(`/jobs/${jobId}/responses?tab=${encodeURIComponent(tab)}`);
   const list = Array.isArray(data) ? data : (data?.applicants || data?.data || []);
@@ -135,6 +147,7 @@ function mapJobOutToJob(j = {}) {
       goodToHave: arr(rp.good_to_have || rp.goodToHave),
       goodToHaveMinMatch: rp.good_to_have_min_match ?? 1,
     },
+    scoringConfig: rp.scoring_config || undefined,
     screeningParams: mapScreeningParamsIn(j.screening_parameters),
     screeningBlueprint: { questions: arr(j.screening_questions).map((q) => createQuestionBlueprint({ prompt: typeof q === 'string' ? q : q.text, questionType: 'hr_screening', difficulty: 'Easy' })) },
     functionalParameters: mapFunctionalIn(j.functional_parameters),
@@ -200,7 +213,12 @@ function mapJobToParametersPayload(job) {
   return {
     screening_questions: toScreeningQuestions(sb),
     functional_parameters: toFunctionalParameters(fp),
-    resume_parameters: { must_have: arr(rc.mustHave), red_flags: arr(rc.redFlags), good_to_have: arr(rc.goodToHave) },
+    // scoring_config rides inside resume_parameters (a freeform JSON column) so the
+    // recruiter's weights/criteria persist without a schema change.
+    resume_parameters: {
+      must_have: arr(rc.mustHave), red_flags: arr(rc.redFlags), good_to_have: arr(rc.goodToHave),
+      ...(job.scoringConfig ? { scoring_config: job.scoringConfig } : {}),
+    },
   };
 }
 
