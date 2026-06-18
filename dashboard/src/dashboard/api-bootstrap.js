@@ -1,7 +1,5 @@
-// API-mode bootstrap: when DATA_SOURCE='api', hydrate the dashboard from the
-// live FastAPI backend instead of localStorage seed data. Runs at startup
-// (after loadStateFromLocalStorage). Cookie auth — if not signed in, shows a
-// minimal login overlay, then hydrates. Inert in 'local' mode.
+// API-mode bootstrap: hydrate from the live FastAPI backend without first
+// rendering localStorage or demo seed data.
 
 import { document } from './runtime.js';
 import { AppState } from './state.js';
@@ -9,15 +7,25 @@ import { renderJobCards, updateJobsCounters, updateSummaryMetrics } from './rend
 import { showPremiumToast } from './sourcing.js';
 import { isApiMode, apiLogin, apiFetchJobs } from './api.js';
 
+let hasShownBackendLoadedToast = false;
+let hydrateJobsPromise = null;
+
 export async function bootstrapApiData() {
   if (!isApiMode()) return;
-  try {
-    await hydrateJobs();
-  } catch (e) {
-    const msg = (e && e.message) || '';
-    if (/401|not authenticated|unauthor|credential/i.test(msg)) showLoginOverlay();
-    else showPremiumToast(`Live backend unreachable: ${msg}`, 'error');
-  }
+
+  if (hydrateJobsPromise) return hydrateJobsPromise;
+
+  hydrateJobsPromise = hydrateJobs()
+    .catch((e) => {
+      const msg = (e && e.message) || '';
+      if (/401|not authenticated|unauthor|credential/i.test(msg)) showLoginOverlay();
+      else showPremiumToast(`Live backend unreachable: ${msg}`, 'error');
+    })
+    .finally(() => {
+      hydrateJobsPromise = null;
+    });
+
+  return hydrateJobsPromise;
 }
 
 async function hydrateJobs() {
@@ -26,7 +34,10 @@ async function hydrateJobs() {
   renderJobCards();
   try { updateJobsCounters(); } catch {}
   try { updateSummaryMetrics(); } catch {}
-  showPremiumToast(`Loaded ${jobs.length} job${jobs.length !== 1 ? 's' : ''} from the live backend.`, 'success');
+  if (!hasShownBackendLoadedToast) {
+    showPremiumToast(`Loaded ${jobs.length} job${jobs.length !== 1 ? 's' : ''} from the live backend.`, 'success');
+    hasShownBackendLoadedToast = true;
+  }
   if (window.__ihNavigateToPath) {
     window.__ihNavigateToPath(window.location.pathname);
   }

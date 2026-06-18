@@ -1,10 +1,10 @@
 'use client';
 
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { initDashboardPage } from '../../src/dashboard/index.js';
 import { html } from '../../src/html/dashboard-crystal';
-import { apiMe, apiLogout, isAuthed, clearAuthed } from '../../src/auth-client.js';
+import { apiMe, apiLogout, clearAuthed } from '../../src/auth-client.js';
 import { apiFetchOrganisation } from '../../src/dashboard/api.js';
 
 const ROLE_LABEL = { super_admin: 'Admin', org_admin: 'Org. Admin', member: 'Member' };
@@ -96,11 +96,6 @@ export default function DashboardShell({ children }) {
   const [phase, setPhase] = useState('checking');
   const [user, setUser] = useState(null);
 
-  // Optimistic upgrade — client-only, after hydration.
-  useEffect(() => {
-    if (isAuthed()) setPhase('authed');
-  }, []);
-
   // Expose routing function to window for url-sync to push to next router
   useEffect(() => {
     window.__ihPushState = (url) => {
@@ -116,7 +111,6 @@ export default function DashboardShell({ children }) {
   // Authoritative session check against the backend.
   useEffect(() => {
     let cancelled = false;
-    const optimistic = isAuthed();
 
     apiMe()
       .then((me) => {
@@ -129,11 +123,8 @@ export default function DashboardShell({ children }) {
         const msg = (err && err.message) || '';
         if (UNAUTHED_RE.test(msg)) {
           clearAuthed();
-          router.replace('/login');
-        } else if (!optimistic) {
-          router.replace('/login');
         }
-        // else: optimistic session + backend hiccup → stay on the dashboard.
+        router.replace('/login');
       });
 
     return () => { cancelled = true; };

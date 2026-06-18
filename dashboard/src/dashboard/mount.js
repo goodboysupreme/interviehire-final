@@ -24,11 +24,19 @@ import { apiCreateJob, apiPatchJobParameters, isApiMode, getDataSource, apiInvit
 // COMPONENT MOUNT BINDINGS
 // ==========================================
 function initMountBindings() {
-  // Load state from localStorage on startup
-  loadStateFromLocalStorage();
+  if (isApiMode()) {
+    AppState.jobs = [];
+    AppState.candidates = [];
+    AppState.team = [];
 
-  // In api mode, hydrate jobs from the live backend (re-renders when ready).
-  bootstrapApiData();
+    try { renderJobCards(); } catch {}
+    try { updateJobsCounters(); } catch {}
+    try { updateSummaryMetrics(); } catch {}
+
+    bootstrapApiData();
+  } else {
+    loadStateFromLocalStorage();
+  }
 
   // Sidebar Collapse Toggle
   const toggleSidebarBtn = document.getElementById('btn-toggle-sidebar');
