@@ -184,7 +184,7 @@ export async function generateTranscriptReport(sessionId: string) {
     futureSignalPlaceholders: { audioAnalysisEnabled: false, videoAnalysisEnabled: false },
     proctoringSummary: {
       eventCount: session.proctoringLogs.length,
-      criticalOrHighCount: session.proctoringLogs.filter((log) => ['CRITICAL', 'HIGH'].includes(log.severity)).length,
+      criticalOrHighCount: session.proctoringLogs.filter((log: any) => ['CRITICAL', 'HIGH'].includes(log.severity)).length,
     },
     reportEngine: 'transcript_llm',
   };

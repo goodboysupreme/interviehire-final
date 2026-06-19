@@ -1,12 +1,59 @@
 import smtplib
 import logging
+import base64
+import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+def send_email_via_resend(to_email: str, subject: str, html_content: str, attachment_content: str | None = None, attachment_name: str | None = None) -> bool:
+    if not settings.RESEND_API_KEY:
+        raise RuntimeError("Resend API Key is not configured.")
+
+    from_email = settings.SMTP_FROM or "onboarding@resend.dev"
+    if not settings.SMTP_FROM or "interviehire.com" in settings.SMTP_FROM or "example.com" in settings.SMTP_FROM:
+        if settings.SMTP_FROM == "hr@interviehire.com":
+            from_email = "onboarding@resend.dev"
+
+    headers = {
+        "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "from": from_email,
+        "to": [to_email],
+        "subject": subject,
+        "html": html_content
+    }
+
+    if attachment_content and attachment_name:
+        encoded_content = base64.b64encode(attachment_content.encode('utf-8')).decode('utf-8')
+        payload["attachments"] = [
+            {
+                "content": encoded_content,
+                "filename": attachment_name
+            }
+        ]
+
+    try:
+        response = requests.post("https://api.resend.com/emails", json=payload, headers=headers)
+        if response.status_code in [200, 201]:
+            logger.info(f"Email sent successfully via Resend API to {to_email}")
+            return True
+        else:
+            logger.error(f"Failed to send email via Resend API: {response.text}")
+            raise RuntimeError(f"Resend API error: {response.text}")
+    except Exception as e:
+        logger.error(f"Error sending email via Resend to {to_email}: {e}")
+        raise e
+
 def send_html_email(to_email: str, subject: str, html_content: str) -> bool:
+    if settings.RESEND_API_KEY:
+        return send_email_via_resend(to_email, subject, html_content)
+
     if not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
         logger.warning(f"SMTP credentials not configured. Email to {to_email} will run in SIMULATION mode.")
         print(f"\n==================== [SIMULATION EMAIL] ====================\nTo: {to_email}\nSubject: {subject}\n============================================================\n")
@@ -352,6 +399,15 @@ def send_ical_invitation_email(
         "END:VCALENDAR"
     ]
     ical_string = "\r\n".join(ical_lines)
+
+    if settings.RESEND_API_KEY:
+        return send_email_via_resend(
+            candidate_email,
+            subject,
+            html_content,
+            attachment_content=ical_string,
+            attachment_name="invite.ics"
+        )
 
     if not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
         box = f"""

@@ -177,7 +177,7 @@ export async function loadEvents(sessionId: string): Promise<TranscriptEvent[]> 
     where: { sessionId },
     orderBy: [{ timestampMs: 'asc' }, { createdAt: 'asc' }],
   });
-  return rows.map((r) => ({
+  return rows.map((r: any) => ({
     sessionId: r.sessionId,
     speaker: r.speaker as TranscriptSpeaker,
     text: r.text,
@@ -295,7 +295,7 @@ export async function finalizeTranscript(sessionId: string): Promise<FinalizeRes
       });
       await prisma.interviewSession
         .update({ where: { id: sessionId }, data: { transcript: turns as any } })
-        .catch((e) => console.error('[transcript] session.transcript projection failed', e));
+        .catch((e: any) => console.error('[transcript] session.transcript projection failed', e));
     }
 
     await prisma.interviewTranscript.update({

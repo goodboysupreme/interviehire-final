@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../lib/prisma.js';
-import { evaluateInterview, generatePdfReport } from '../services/evaluation.service.js';
-import { evaluateInterviewWithAviral } from '../services/aviral-evaluation.service.js';
+import { evaluateInterview, generatePdfReport, getCandidateFacingReport } from '../services/evaluation.service.js';
 import nodemailer from 'nodemailer';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -277,7 +276,6 @@ export async function interviewRoutes(app: FastifyInstance) {
     const ai = await handleCandidateTranscript(req.params.id, text, req.body?.metrics ?? {});
     return { answer: { text }, ai };
   });
-
   // Ingest a pasted interview transcript (e.g. copied from Convai's memory tab)
   // and store it as session.transcript in the shape the evaluator expects
   // ({speaker:'ai'|'candidate', text, questionIndex}). Tolerant of several paste
@@ -328,14 +326,9 @@ export async function interviewRoutes(app: FastifyInstance) {
     await prisma.interviewSession.update({ where: { id: req.params.id }, data: { transcript: normalized as any } });
     return { ok: true, turns: normalized.length, transcript: normalized };
   });
-  app.post('/sessions/:id/evaluate', async (req:any) => {
-    try {
-      return { evaluation: await evaluateInterviewWithAviral(req.params.id), engine: 'aviral' };
-    } catch (err) {
-      req.log?.error?.(err);
-      return { evaluation: await evaluateInterview(req.params.id), engine: 'fallback' };
-    }
-  });
+
+  app.post('/sessions/:id/evaluate', async (req:any) => ({evaluation: await evaluateInterview(req.params.id)}));
+  app.get('/sessions/:id/candidate-report', async (req:any) => ({report: await getCandidateFacingReport(req.params.id)}));
   app.post('/sessions/:id/report', async (req:any) => ({filePath: await generatePdfReport(req.params.id)}));
   app.post('/sessions/:id/email-report', async (req:any) => {
     const session = await prisma.interviewSession.findUnique({where:{id:req.params.id}, include:{company:true,candidate:true}});

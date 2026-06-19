@@ -17,7 +17,7 @@ function normalizedMatch(text: string, terms: string[]) {
 function numericScore(value: any, max = 10) { return Math.max(0, Math.min(1, Number(value || 0) / max)); }
 export function scoreCandidate(candidate: CandidateProfile, role: JobRole) {
   const resumeText = JSON.stringify(candidate).toLowerCase();
-  const weights = Object.assign({}, defaultWeights[role.roleType], role.atsScoringWeights as object);
+  const weights = Object.assign({}, defaultWeights[role.roleType as keyof typeof defaultWeights], role.atsScoringWeights as object);
   const primary = normalizedMatch(resumeText, role.primaryCriteria);
   const secondary = normalizedMatch(resumeText, role.secondaryCriteria);
   const education = normalizedMatch(resumeText, ['mba','b.tech','bachelor','master','economics','engineering','business']);

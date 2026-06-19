@@ -1,3 +1,13 @@
 import type { NextConfig } from 'next';
-const nextConfig: NextConfig = { transpilePackages: ['@interviehire/shared'] };
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const nextConfig: NextConfig = {
+  transpilePackages: ['@interviehire/shared', '@convai/web-sdk'],
+  outputFileTracingRoot: path.join(__dirname, '../../')
+};
+
 export default nextConfig;
