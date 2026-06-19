@@ -51,20 +51,8 @@ function refreshResumeCandidateRowIdentity(cid) {
   if (emailEl) emailEl.textContent = candidate.email || 'No email found';
 }
 
-function generateAutoResumeAnalysis(candidateName) {
-  // Strictly resume-analysis only — no hallucinated later-stage data
-  const matchScore = Math.round(50 + Math.random() * 45);
-  return {
-    matchScore,
-    summary: `${candidateName}'s resume shows relevant experience and skills for the role.`,
-    skills: {
-      detected: ['Communication', 'Project Management'],
-      matched: ['Proposal Writing'],
-      missing: []
-    },
-    recommendation: matchScore >= 70 ? 'Advance' : 'Hold'
-  };
-}
+// removed generateAutoResumeAnalysis — it fabricated random match scores. Analysis
+// runs only on real resume text now.
 
 function renderResumeStagePaneForJob(candidates, job, container) {
   // Hydrate the in-memory cache from analyses persisted on candidates
@@ -330,57 +318,9 @@ async function handleResumeFile(cid, file) {
   });
 }
 
-function generateSyntheticResume(candidate, job) {
-  const allSkills = {
-    'Full Stack Developer': {
-      core: ['JavaScript', 'React', 'Node.js', 'PostgreSQL', 'TypeScript', 'REST APIs', 'Git', 'Docker', 'AWS', 'MongoDB', 'GraphQL', 'Redis', 'Express.js', 'Next.js', 'CI/CD', 'Kubernetes'],
-      companies: ['Infosys', 'TCS', 'Wipro', 'Flipkart', 'Razorpay', 'Swiggy', 'Paytm', 'Zoho'],
-      tasks: ['Built responsive web dashboards serving 50K+ daily users', 'Implemented RESTful microservices reducing API latency by 40%', 'Led migration from monolith to microservices architecture', 'Designed and maintained CI/CD pipelines with GitHub Actions', 'Optimized database queries resulting in 3x faster page loads', 'Mentored 3 junior developers on React best practices']
-    },
-    'Government Tender & Proposal Executive': {
-      core: ['Proposal Writing', 'RFP Analysis', 'Compliance', 'GeM Portal', 'SAP Ariba', 'Tender Management', 'Government Procurement', 'Documentation', 'MS Office', 'Contract Negotiation', 'Bid Management', 'CPPP Portal', 'Public Procurement', 'Financial Proposals'],
-      companies: ['L&T', 'BHEL', 'NTPC', 'Tata Projects', 'Adani Group', 'GMR Group', 'HCL Infra'],
-      tasks: ['Managed end-to-end tender lifecycle for 20+ government contracts', 'Drafted technical and financial proposals worth INR 50Cr+', 'Ensured 100% compliance with GeM and CPPP portal requirements', 'Coordinated with legal and finance teams for bid documentation', 'Won 15 government contracts through competitive bidding process', 'Maintained vendor database with 200+ suppliers']
-    }
-  };
-  const profile = allSkills[job.roleName] || allSkills['Full Stack Developer'];
-  const shuffled = [...profile.core].sort(() => 0.5 - Math.random());
-  const numSkills = 6 + Math.floor(Math.random() * 5);
-  const picked = shuffled.slice(0, numSkills);
-  const yrs = 1 + Math.floor(Math.random() * 7);
-  const company1 = profile.companies[Math.floor(Math.random() * profile.companies.length)];
-  const company2 = profile.companies.filter(c => c !== company1)[Math.floor(Math.random() * (profile.companies.length - 1))];
-  const tasks = [...profile.tasks].sort(() => 0.5 - Math.random()).slice(0, 3);
-  const tasks2 = [...profile.tasks].sort(() => 0.5 - Math.random()).slice(0, 2);
-
-  return `RESUME
-
-Name: ${candidate.name}
-Email: ${candidate.email}
-Phone: ${candidate.phone}
-
-PROFESSIONAL SUMMARY
-Results-driven professional with ${yrs} years of experience in ${job.roleName.toLowerCase()} roles. Strong background in ${picked.slice(0, 3).join(', ')} with a proven ability to deliver high-quality outcomes under deadline pressure.
-
-TECHNICAL SKILLS
-${picked.join(' | ')}
-
-WORK EXPERIENCE
-
-${job.roleName} — ${company1} (${Math.max(yrs - 2, 1)} years, current)
-${tasks.map(t => '  - ' + t).join('\n')}
-
-Associate ${job.roleName} — ${company2} (2 years)
-${tasks2.map(t => '  - ' + t).join('\n')}
-
-EDUCATION
-B.Tech in Computer Science — Indian Institute of Technology, Delhi (2018-2022)
-CGPA: ${(7 + Math.random() * 2.5).toFixed(1)}/10
-
-CERTIFICATIONS
-- AWS Certified Solutions Architect (2024)
-- Google Project Management Certificate (2023)`;
-}
+// removed generateSyntheticResume — it invented fake resumes (Swiggy/Flipkart/
+// fake CGPA/certs) that were scored as if real. Analysis now requires the real
+// resume text (server-fetched or uploaded) and fails loudly when there is none.
 
 function isGarbageText(text) {
   if (!text || text.length < 20) return true;
@@ -1481,4 +1421,4 @@ function hasActiveFilters(stageKey) {
 }
 
 
-export { applyStageFilters, bindResumeAnalysisEvents, buildFilterDropdown, cacheResumeTextAndIdentity, extractExperienceYearsFromText, extractNameFromResumeText, generateAutoResumeAnalysis, generateSyntheticResume, handleResumeFile, hasActiveFilters, isGarbageText, openScheduleModal, refreshResumeCandidateRowIdentity, renderAnalysisResult, renderResumeStagePaneForJob, reportChatCache, resumeAnalysisCache, resumeIdentityCache, resumeTextCache, runBulkResumeAnalysis, runResumeAnalysis, toggleResumeCriteriaEdit };
+export { applyStageFilters, bindResumeAnalysisEvents, buildFilterDropdown, cacheResumeTextAndIdentity, extractExperienceYearsFromText, extractNameFromResumeText, handleResumeFile, hasActiveFilters, isGarbageText, openScheduleModal, refreshResumeCandidateRowIdentity, renderAnalysisResult, renderResumeStagePaneForJob, reportChatCache, resumeAnalysisCache, resumeIdentityCache, resumeTextCache, runBulkResumeAnalysis, runResumeAnalysis, toggleResumeCriteriaEdit };
