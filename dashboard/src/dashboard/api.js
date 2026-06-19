@@ -94,6 +94,21 @@ export async function apiCreateTestSession(jobId) {
 // Persist a candidate to the backend so it has a real UUID (and can be scheduled
 // / interviewed). Used when a candidate was added in the UI but only carries a
 // local "CAN-…" code. Returns the mapped candidate with its backend UUID.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// A candidate added in the UI may carry only a local "CAN-…" code (not yet on the
+// backend). Some actions need a real backend UUID — create the applicant on demand
+// and adopt its UUID. Mutates c2 (id + _backend). Returns the backend id.
+export async function ensureBackendApplicantId(c2, jobId) {
+  if (UUID_RE.test(String(c2.id || ''))) return c2.id;
+  if (!c2.email) throw new Error(`${c2.name || 'Candidate'} has no email — add one before syncing to the backend.`);
+  const created = await apiAddApplicant(jobId, { name: c2.name, email: c2.email, phone: c2.phone });
+  if (!created || !created.id) throw new Error('Could not register the candidate in the backend.');
+  c2.id = created.id;       // adopt the real backend UUID for all future actions
+  c2._backend = true;
+  return created.id;
+}
+
 export async function apiAddApplicant(jobId, { name, email, phone } = {}) {
   const data = await request(`/jobs/${jobId}/applicants`, {
     method: 'POST',

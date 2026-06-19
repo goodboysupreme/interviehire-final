@@ -8,7 +8,7 @@ import { computeWeightedScore, getScoringConfig, recommendationFromScore } from 
 import { soundEngine } from './sound.js';
 import { addCandidateToAppState, extractResumeIdentity, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
-import { getDataSource, apiUpdateApplicant, apiGetResumeText } from './api.js';
+import { getDataSource, apiUpdateApplicant, apiGetResumeText, ensureBackendApplicantId } from './api.js';
 
 // ==========================================
 // RESUME ANALYSIS (AI-powered, Lina)
@@ -825,8 +825,21 @@ ${resumeText.slice(0, 5000)}`;
         if (!quiet) showPremiumToast('Saved locally — backend sync failed. Reanalyse to retry.', 'info');
       });
     } else if (getDataSource() === 'api' && !cand._backend) {
-      console.warn('Resume analysis not synced — candidate is not yet a backend applicant:', cid);
-      if (!quiet) showPremiumToast('Analysis saved locally only — candidate is not yet synced to the backend.', 'info');
+      // Uploaded/local "CAN-" candidate: register it on the backend so the resume
+      // text + analysis actually persist (previously saved to localStorage only).
+      ensureBackendApplicantId(cand, job.id).then((backendId) => {
+        saveStateToLocalStorage(); // cand.id is now the real backend UUID
+        return apiUpdateApplicant(backendId, {
+          match_score: result.matchScore,
+          resume_analysis_report: JSON.stringify(result),
+          resume_text: resumeText,
+          resume_analysed: true,
+          resume_shortlisted: result.recommendation === 'Advance',
+        });
+      }).catch((err) => {
+        console.warn('Could not sync candidate to backend:', err);
+        if (!quiet) showPremiumToast(`Analysis saved locally — couldn't sync: ${err.message || err}`, 'info');
+      });
     }
   }
   renderAnalysisResult(cid, result);
