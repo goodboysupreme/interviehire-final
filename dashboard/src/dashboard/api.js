@@ -79,6 +79,21 @@ export async function apiCreateTestSession(jobId) {
   return data?.session_id || null;
 }
 
+// Persist a candidate to the backend so it has a real UUID (and can be scheduled
+// / interviewed). Used when a candidate was added in the UI but only carries a
+// local "CAN-…" code. Returns the mapped candidate with its backend UUID.
+export async function apiAddApplicant(jobId, { name, email, phone } = {}) {
+  const data = await request(`/jobs/${jobId}/applicants`, {
+    method: 'POST',
+    body: {
+      name: name || 'Candidate',
+      email,
+      phone: phone || null,
+    },
+  });
+  return mapApplicantOutToCandidate(data);
+}
+
 export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'screening') {
   const data = await request(`/jobs/applicants/${applicantId}/schedule`, {
     method: 'POST',

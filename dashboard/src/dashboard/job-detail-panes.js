@@ -17,7 +17,21 @@ import { soundEngine } from './sound.js';
 import { showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
 import { activeCandidateSubTabs } from './vetting-data.js';
-import { getDataSource, apiScheduleCandidate } from './api.js';
+import { getDataSource, apiScheduleCandidate, apiAddApplicant } from './api.js';
+
+// A candidate added in the UI may only carry a local "CAN-…" code (not yet
+// persisted to the backend). Scheduling needs a real backend UUID, so create the
+// applicant on demand and adopt its UUID. Returns the id to schedule against.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function ensureBackendApplicantId(c2, jobId) {
+  if (UUID_RE.test(String(c2.id || ''))) return c2.id;
+  if (!c2.email) throw new Error(`${c2.name || 'Candidate'} has no email — add one before scheduling.`);
+  const created = await apiAddApplicant(jobId, { name: c2.name, email: c2.email, phone: c2.phone });
+  if (!created || !created.id) throw new Error('Could not register the candidate in the backend.');
+  c2.id = created.id;       // adopt the real backend UUID for all future actions
+  c2._backend = true;
+  return created.id;
+}
 
 function renderJobDetailPanes(job) {
   const searchVal = document.getElementById('jd-candidate-search').value.trim().toLowerCase();
@@ -564,7 +578,8 @@ function renderJobDetailPanes(job) {
                     const c2 = AppState.candidates.find(c => c.id === cid);
                     if (!c2) return;
                     const stage = c2.status?.toLowerCase() === 'screening' ? 'screening' : 'functional';
-                    const updated = await apiScheduleCandidate(cid, utcIso, stage);
+                    const scheduleId = await ensureBackendApplicantId(c2, job.id);
+                    const updated = await apiScheduleCandidate(scheduleId, utcIso, stage);
                     if (updated) {
                       Object.assign(c2, updated);
                     } else {
@@ -631,7 +646,8 @@ function renderJobDetailPanes(job) {
               try {
                 const stage = c2.status?.toLowerCase() === 'screening' ? 'screening' : 'functional';
                 const utcIso = new Date(start).toISOString();
-                const updated = await apiScheduleCandidate(candId, utcIso, stage);
+                const scheduleId = await ensureBackendApplicantId(c2, job.id);
+                const updated = await apiScheduleCandidate(scheduleId, utcIso, stage);
 
                 if (updated) {
                   Object.assign(c2, updated);
