@@ -1680,8 +1680,17 @@ def upload_resumes(
     deepseek_key = os.getenv("DEEPSEEK_API_KEY")
 
     for file_path, filename in files_to_process:
-        from app.utils.resume_parser import parse_resume_with_deepseek
+        from app.utils.resume_parser import parse_resume_with_deepseek, extract_text_from_file
         parsed_info = parse_resume_with_deepseek(file_path, filename, deepseek_key)
+
+        # Persist the raw resume text so re-analysis survives an ephemeral-filesystem
+        # wipe (Railway clears uploads/ on restart, leaving resume_url dangling).
+        resume_text = None
+        try:
+            resume_text = extract_text_from_file(file_path)
+        except Exception as parse_err:
+            print(f"Error extracting resume text from {file_path}: {parse_err}")
+
         parsed_name = parsed_info.get("name")
         parsed_email = parsed_info.get("email")
         parsed_phone = parsed_info.get("phone")
@@ -1705,7 +1714,9 @@ def upload_resumes(
         if existing_applicant:
             # Map resume to the existing candidate record
             existing_applicant.resume_url = file_path
-            
+            if resume_text:  # don't clobber a previously-stored resume with a failed re-extract
+                existing_applicant.resume_text = resume_text
+
             # Preserve the source: do not overwrite existing source if already set
             if not existing_applicant.source and source:
                 existing_applicant.source = source
@@ -1734,6 +1745,7 @@ def upload_resumes(
                 phone=parsed_phone or "+1 555-0199",
                 source=source or ApplicantSource.bulk_upload,
                 resume_url=file_path,
+                resume_text=resume_text,
                 job_id=job_id,
                 resume_analysed=False
             )
@@ -1984,9 +1996,15 @@ def get_applicant_resume_text(
     db: Session = Depends(get_db)
 ):
     applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
+
+    # Prefer the persisted text — survives Railway's ephemeral-filesystem wipe that
+    # leaves resume_url pointing at a file that no longer exists.
+    if applicant.resume_text:
+        return {"text": applicant.resume_text}
+
     if not applicant.resume_url or not os.path.exists(applicant.resume_url):
         return {"text": ""}
-    
+
     from app.utils.resume_parser import extract_text_from_file
     file_text = extract_text_from_file(applicant.resume_url)
     return {"text": file_text}

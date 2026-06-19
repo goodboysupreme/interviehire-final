@@ -71,6 +71,7 @@ CREATE TABLE applicants (
     report_url VARCHAR,
     match_score FLOAT,
     resume_analysis_report TEXT,
+    resume_text TEXT,
     decision TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

@@ -65,6 +65,7 @@ class Applicant(Base):
     attempted_at = Column(DateTime(timezone=True), nullable=True)
     match_score = Column(Float, nullable=True)
     resume_analysis_report = Column(Text, nullable=True)
+    resume_text = Column(Text, nullable=True)
     # Recruiter's resume-stage call: 'shortlisted' | 'rejected' | 'hired'. Separate
     # from screening/functional_status so recording it never spins up an interview.
     decision = Column(String, nullable=True)

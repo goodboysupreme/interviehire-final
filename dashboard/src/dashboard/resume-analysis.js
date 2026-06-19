@@ -8,7 +8,7 @@ import { computeWeightedScore, getScoringConfig, recommendationFromScore } from 
 import { soundEngine } from './sound.js';
 import { addCandidateToAppState, extractResumeIdentity, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
-import { getDataSource, apiUpdateApplicant } from './api.js';
+import { getDataSource, apiUpdateApplicant, apiGetResumeText } from './api.js';
 
 // ==========================================
 // RESUME ANALYSIS (AI-powered, Lina)
@@ -697,12 +697,19 @@ async function runResumeAnalysis(cid, job, opts = {}) {
     }
   }
 
-  // Demo/seed candidates (and any analysed candidate whose text wasn't persisted
-  // before this fix) have no uploaded text and no link — regenerate synthetic
-  // text so "Reanalyse" works instead of failing on every row.
-  if ((!resumeText || isGarbageText(resumeText)) && candidate && !candidate.resumeLink) {
-    resumeText = generateSyntheticResume(candidate, job) || resumeText;
-    if (resumeText) resumeTextCache[cid] = resumeText;
+  // Backend candidates carry no local resume text (it lives server-side). Pull the
+  // real parsed text instead of fabricating one, so the score reflects the actual
+  // resume rather than synthetic filler.
+  if ((!resumeText || isGarbageText(resumeText)) && candidate && candidate._backend && getDataSource() === 'api') {
+    try {
+      const serverText = await apiGetResumeText(cid);
+      if (serverText && !isGarbageText(serverText)) {
+        resumeTextCache[cid] = serverText;
+        resumeText = serverText.trim();
+      }
+    } catch (e) {
+      console.warn('resume-text fetch failed', e);
+    }
   }
 
   if (!resumeText || isGarbageText(resumeText)) {
@@ -810,12 +817,16 @@ ${resumeText.slice(0, 5000)}`;
       apiUpdateApplicant(cid, {
         match_score: result.matchScore,
         resume_analysis_report: JSON.stringify(result),
+        resume_text: resumeText,
         resume_analysed: true,
         resume_shortlisted: result.recommendation === 'Advance',
       }).catch((err) => {
         console.warn('Resume analysis saved locally but backend sync failed:', err);
         if (!quiet) showPremiumToast('Saved locally — backend sync failed. Reanalyse to retry.', 'info');
       });
+    } else if (getDataSource() === 'api' && !cand._backend) {
+      console.warn('Resume analysis not synced — candidate is not yet a backend applicant:', cid);
+      if (!quiet) showPremiumToast('Analysis saved locally only — candidate is not yet synced to the backend.', 'info');
     }
   }
   renderAnalysisResult(cid, result);

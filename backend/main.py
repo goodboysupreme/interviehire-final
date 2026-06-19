@@ -32,6 +32,7 @@ def init_db():
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS attempted_at TIMESTAMP;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS match_score FLOAT;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS resume_analysis_report TEXT;"))
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS resume_text TEXT;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS scheduling_token VARCHAR;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS calendar_event_id VARCHAR;"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS organisation_id UUID;"))

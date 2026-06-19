@@ -125,6 +125,14 @@ export async function apiUpdateApplicant(applicantId, patch) {
   return mapApplicantOutToCandidate(data);
 }
 
+// Fetch the real parsed resume text the backend has on file for this applicant.
+// Returns '' when the backend has nothing stored, so callers can fall back
+// cleanly instead of scoring fabricated text.
+export async function apiGetResumeText(applicantId) {
+  const data = await request(`/jobs/applicants/${applicantId}/resume-text`);
+  return (data && data.text) || '';
+}
+
 // ── Mappers: backend (snake_case) ⇄ dashboard (camelCase) ──────────────────
 const arr = (v) => (Array.isArray(v) ? v : []);
 
@@ -256,6 +264,9 @@ function mapApplicantOutToCandidate(a = {}) {
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,
     matchScore: a.match_score ?? null,
     decision: a.decision ?? null,
+    // Rehydrate the stored analysis so a re-opened report shows the saved result
+    // instead of re-scoring from scratch.
+    ...(() => { try { const p = a.resume_analysis_report ? JSON.parse(a.resume_analysis_report) : null; return p ? { resumeAnalysis: p } : {}; } catch { return {}; } })(),
     _backend: true,
   };
 }

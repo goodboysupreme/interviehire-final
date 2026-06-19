@@ -246,6 +246,7 @@ class ApplicantUpdateIn(BaseModel):
     remarks: Optional[str] = None
     match_score: Optional[float] = None
     resume_analysis_report: Optional[str] = None
+    resume_text: Optional[str] = None
     decision: Optional[Literal['shortlisted', 'on_hold', 'rejected', 'hired']] = None
     screening_scheduled_at: Optional[datetime] = None
     functional_scheduled_at: Optional[datetime] = None
