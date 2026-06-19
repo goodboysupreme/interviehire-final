@@ -1901,7 +1901,9 @@ def schedule_interview(
     # Send confirmation email with calendar invite and interview link
     try:
         reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
-        interview_link = f"{settings.FRONTEND_URL}/interview?sessionId={applicant.id}"
+        # The candidate joins the SAME AI interview room as "Run test interview"
+        # (the engine web app), keyed by the applicant id as the session id.
+        interview_link = f"{settings.INTERVIEW_ROOM_URL.rstrip('/')}/interview?sessionId={applicant.id}"
         uid = f"interview-{stage_name.lower().replace(' ', '-')}-{applicant.id}@interviehire.com"
         send_ical_invitation_email(
             candidate_name=applicant.name,

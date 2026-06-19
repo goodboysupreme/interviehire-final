@@ -42,6 +42,21 @@ services:
         value: none
       - key: COOKIE_SECURE
         value: "true"
+      # Candidate interview room — the emailed calendar invite links to the
+      # site's /interview panel (must be where the candidate room is served).
+      - key: INTERVIEW_ROOM_URL
+        value: https://interviehire.com
+      # Email for calendar invites (Gmail SMTP is free via an App Password).
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_FROM
+        value: interviehire@gmail.com
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
 
   # ── Fastify interview engine (sessions, transcript pipeline, LLM report) ──
   - type: web

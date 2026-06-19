@@ -16,8 +16,14 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-this-in-production"
     APP_NAME: str = "Hiring Dashboard"
  
-    # CORS
+    # CORS — the recruiter dashboard origin
     FRONTEND_URL: str = "http://localhost:3000"
+
+    # The candidate interview room base URL (the engine web app). The emailed
+    # calendar invite's "Enter Interview Room" link points here, so it opens the
+    # SAME AI interview room that "Run test interview" uses. Local: :3001.
+    # Production: https://interview.interviehire.com
+    INTERVIEW_ROOM_URL: str = "http://localhost:3001"
 
     # SMTP Settings
     SMTP_HOST: str = "smtp.gmail.com"

@@ -45,7 +45,7 @@ class Company(Base):
     webhooks = Column(JSONB, default=dict, nullable=False)
     reportEmail = Column(String, nullable=True)
     createdAt = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updatedAt = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updatedAt = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now(), nullable=False)
 
     jobRoles = relationship("JobRole", back_populates="company", cascade="all, delete-orphan")
     candidates = relationship("Candidate", back_populates="company", cascade="all, delete-orphan")
@@ -66,7 +66,7 @@ class Candidate(Base):
     atsScore = Column(Float, default=0.0, nullable=False)
     atsBreakdown = Column(JSONB, default=dict, nullable=False)
     createdAt = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updatedAt = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updatedAt = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now(), nullable=False)
 
     company = relationship("Company", back_populates="candidates")
     sessions = relationship("InterviewSession", back_populates="candidate", cascade="all, delete-orphan")
@@ -86,7 +86,7 @@ class JobRole(Base):
     atsScoringWeights = Column(JSONB, nullable=False)
     evaluationCriteria = Column(JSONB, default=dict, nullable=False)
     createdAt = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updatedAt = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updatedAt = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now(), nullable=False)
 
     company = relationship("Company", back_populates="jobRoles")
     questions = relationship("Question", back_populates="jobRole")
@@ -109,7 +109,7 @@ class Question(Base):
     version = Column(Integer, default=1, nullable=False)
     isActive = Column(Boolean, default=True, nullable=False)
     createdAt = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updatedAt = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updatedAt = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now(), nullable=False)
 
     company = relationship("Company", back_populates="questions")
     jobRole = relationship("JobRole", back_populates="questions")
@@ -133,7 +133,7 @@ class InterviewSession(Base):
     evaluation = Column(JSONB, nullable=True)
     reportUrl = Column(String, nullable=True)
     createdAt = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updatedAt = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updatedAt = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now(), nullable=False)
 
     company = relationship("Company", back_populates="sessions")
     candidate = relationship("Candidate", back_populates="sessions")
