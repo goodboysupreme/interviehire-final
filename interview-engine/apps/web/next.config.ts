@@ -1,13 +1,14 @@
 import type { NextConfig } from 'next';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
+// The candidate room is a fully client-rendered SPA (no API routes, no
+// middleware, no server features) — it talks to the engine API from the
+// browser. Static export means Vercel ships plain files on its CDN with NO
+// serverless function, which sidesteps the monorepo function-tracing bug
+// (`noop.js` → cannot find next/dist/.../server.runtime.prod.js).
 const nextConfig: NextConfig = {
-  transpilePackages: ['@interviehire/shared', '@convai/web-sdk'],
-  outputFileTracingRoot: path.join(__dirname, '../../')
+  output: 'export',
+  images: { unoptimized: true },
+  transpilePackages: ['@interviehire/shared', '@convai/web-sdk']
 };
 
 export default nextConfig;
