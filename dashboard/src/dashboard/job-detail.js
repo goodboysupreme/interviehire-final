@@ -133,11 +133,7 @@ async function hydrateBackendApplicants(job) {
   const elScreening = document.getElementById('jd-count-screening');
   if (elScreening) elScreening.textContent = job.pipeline.screening;
   const elFunctional = document.getElementById('jd-count-functional');
-  if (elFunctional) {
-    elFunctional.textContent = job.pipeline.screening > 0
-      ? `${job.pipeline.functional} of ${job.pipeline.screening}`
-      : job.pipeline.functional;
-  }
+  if (elFunctional) elFunctional.textContent = job.pipeline.functional;
 
   renderFunnelStages(job);
   renderFunnelInsights(job);

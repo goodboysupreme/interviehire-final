@@ -748,11 +748,7 @@ function refreshAfterStageChange() {
     const elScreening = document.getElementById('jd-count-screening');
     if (elScreening) elScreening.textContent = activeJob.pipeline.screening;
     const elFunctional = document.getElementById('jd-count-functional');
-    if (elFunctional) {
-      elFunctional.textContent = activeJob.pipeline.screening > 0
-        ? `${activeJob.pipeline.functional} of ${activeJob.pipeline.screening}`
-        : activeJob.pipeline.functional;
-    }
+    if (elFunctional) elFunctional.textContent = activeJob.pipeline.functional;
 
     renderFunnelStages(activeJob);
     renderFunnelInsights(activeJob);
