@@ -11,3 +11,4 @@ build/
 # Generated interview transcript files
 transcripts/
 uploads/
+.vercel
