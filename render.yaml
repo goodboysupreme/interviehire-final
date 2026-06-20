@@ -7,12 +7,11 @@
 #   - interviehire-engine   (Fastify)  → interview sessions + transcript + report
 # Point the Vercel front-ends at these (see DEPLOY.md).
 
-databases:
-  - name: interviehire-db
-    plan: free
-    databaseName: interviehire
-    # Both services attach to this one Postgres (engine = Prisma tables,
-    # backend = SQLAlchemy tables, same DB — matches local).
+# Postgres is hosted on RAILWAY (one shared DB), no longer on Render. Both
+# services below set DATABASE_URL to that Railway connection string via
+# `sync: false` — paste the same Railway URL into BOTH services in the Render
+# dashboard. Engine = Prisma tables, backend = SQLAlchemy tables, ONE shared DB.
+# (The test-interview handoff breaks if they ever point at different DBs.)
 
 services:
   # ── FastAPI backend (recruiter dashboard API: auth, jobs, applicants) ──
@@ -30,9 +29,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
-        fromDatabase:
-          name: interviehire-db
-          property: connectionString
+        sync: false   # Railway Postgres — SAME value for backend + engine
       # The dashboard's public origin (Vercel), used for CORS + auth cookie.
       # e.g. https://app.interviehire.com — paste when prompted.
       - key: FRONTEND_URL
@@ -45,7 +42,7 @@ services:
       # Candidate interview room — the emailed calendar invite links to the
       # site's /interview panel (must be where the candidate room is served).
       - key: INTERVIEW_ROOM_URL
-        value: https://interviehire.com
+        value: https://interview.interviehire.com
       # Email for calendar invites (Gmail SMTP is free via an App Password).
       - key: SMTP_HOST
         value: smtp.gmail.com
@@ -70,9 +67,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: interviehire-db
-          property: connectionString
+        sync: false   # Railway Postgres — SAME value for backend + engine
       # Avatar voice → Deepgram (webm-native). Candidate side is keyless browser STT.
       - key: DEEPGRAM_API_KEY
         sync: false

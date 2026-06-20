@@ -1,17 +1,17 @@
 # Deploying IntervieHire to production (interviehire.com)
 
 Goal: the whole product is public, and the UE5 avatar runs on **your PC** but is
-reachable at `https://interviehire.com/interview/avatar` from any device.
+reachable at `https://interview.interviehire.com/interview/avatar` from any device.
 
 ## Architecture (what goes where)
 
 | Piece | Host | Public URL |
 |---|---|---|
-| Candidate room (`interview-engine/apps/web`) | **Vercel** | `interviehire.com` (has `/interview` + `/interview/avatar`) |
+| Candidate room (`interview-engine/apps/web`) | **Vercel** | `interview.interviehire.com` (has `/interview` + `/interview/avatar`) |
 | Recruiter dashboard (`dashboard`) | **Vercel** | `app.interviehire.com` |
 | Interview engine — Fastify (`interview-engine`) | **Render** | `interviehire-engine.onrender.com` |
 | Backend — FastAPI (`backend`) | **Render** | `interviehire-backend.onrender.com` |
-| Postgres (shared) | **Render** | (internal) |
+| Postgres (shared) | **Railway** | both services set `DATABASE_URL` to it (`sync: false`) |
 | UE5 avatar (Pixel Streaming) | **Your PC** + Cloudflare named tunnel | `avatar.interviehire.com` |
 
 The avatar video is **WebRTC straight from your PC to the viewer** (via TURN).
@@ -33,8 +33,9 @@ A stable `avatar.interviehire.com` tunnel needs the zone on Cloudflare.
 ## 2. Backend + Engine + Postgres → Render (one Blueprint)
 
 1. Push this repo to GitHub.
-2. Render → **New → Blueprint** → pick the repo. It reads [`render.yaml`](render.yaml) and creates: Postgres `interviehire-db`, `interviehire-backend`, `interviehire-engine`.
+2. Render → **New → Blueprint** → pick the repo. It reads [`render.yaml`](render.yaml) and creates `interviehire-backend` + `interviehire-engine`. Postgres is **not** provisioned here — it lives on **Railway** now.
 3. When prompted for `sync: false` secrets, paste:
+   - **both services** → `DATABASE_URL` = the **Railway** Postgres connection string (the public/external URL). Use the **same** value for backend and engine — they share one DB.
    - **interviehire-backend** → `FRONTEND_URL` = `https://app.interviehire.com`
    - **interviehire-engine** → `DEEPGRAM_API_KEY`, `OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY` (the OpenRouter key works for both `OPENROUTER_API_KEY` and `DEEPSEEK_API_KEY`).
 4. First deploy runs Prisma migrations automatically (engine `startCommand`).
@@ -52,21 +53,21 @@ A stable `avatar.interviehire.com` tunnel needs the zone on Cloudflare.
 
 Both are Next apps in this monorepo (npm workspaces + the `@interviehire/shared` package).
 
-### 3a. Candidate room → interviehire.com
-- Vercel → New Project → this repo.
+### 3a. Candidate room → interview.interviehire.com
+- Vercel → New Project → this repo. **This is a SEPARATE Vercel project from the dashboard** — the room owns `/interview`, the dashboard does not.
 - **Root Directory:** `interview-engine/apps/web` → enable **"Include source files outside of the Root Directory"** (so `packages/shared` is available).
 - It picks up [`apps/web/vercel.json`](interview-engine/apps/web/vercel.json) (install/build run from the workspace root).
 - **Environment Variables** (Production) — see [`.env.production.example`](interview-engine/apps/web/.env.production.example):
   - `NEXT_PUBLIC_API_URL` = `https://interviehire-engine.onrender.com`
   - `NEXT_PUBLIC_WS_URL` = `wss://interviehire-engine.onrender.com/ws`
   - `NEXT_PUBLIC_AVATAR_URL` = `https://avatar.interviehire.com`
-- **Domain:** add `interviehire.com`.
+- **Domain:** add `interview.interviehire.com`. Verify `curl -I https://interview.interviehire.com/interview` returns **200** before pointing the dashboard at it.
 
 ### 3b. Dashboard → app.interviehire.com
 - Vercel → New Project → this repo → **Root Directory:** `dashboard`.
 - **Environment Variables** — see [`dashboard/.env.production.example`](dashboard/.env.production.example):
   - `NEXT_PUBLIC_API_URL` = `https://interviehire-backend.onrender.com/api`
-  - `NEXT_PUBLIC_ENGINE_WEB_URL` = `https://interviehire.com`
+  - `NEXT_PUBLIC_ENGINE_WEB_URL` = `https://interview.interviehire.com`
 - **Domain:** add `app.interviehire.com`.
 
 After both are live, double-check the backend's `FRONTEND_URL` on Render equals the
@@ -97,7 +98,7 @@ cross-network WebRTC). Start order on the PC: UE app → signalling (`:80`) → 
 ## 5. Smoke test
 
 1. `https://avatar.interviehire.com` → avatar streams.
-2. `https://interviehire.com/interview/avatar` → same avatar, embedded.
+2. `https://interview.interviehire.com/interview/avatar` → same avatar, embedded.
 3. `https://app.interviehire.com` → log in (`admin@interviehire.com`) → "Run test interview".
 4. Take the interview from **another device** → speak (browser STT) + click
    "🎧 Capture interviewer" → End → transcript `.txt` + report generate.
@@ -108,10 +109,10 @@ cross-network WebRTC). Start order on the PC: UE app → signalling (`:80`) → 
 |---|---|---|
 | engine | `DEEPGRAM_API_KEY` | avatar STT |
 | engine | `OPENROUTER_API_KEY` / `DEEPSEEK_API_KEY` | LLM report (same OpenRouter key) |
-| engine | `DATABASE_URL` | from Render Postgres |
+| engine + backend | `DATABASE_URL` | **Railway** Postgres — same URL for both (shared DB) |
 | backend | `FRONTEND_URL` | `https://app.interviehire.com` |
 | backend | `COOKIE_SAMESITE=none`, `COOKIE_SECURE=true` | cross-site auth cookie |
 | web | `NEXT_PUBLIC_API_URL` / `_WS_URL` | engine on Render |
 | web | `NEXT_PUBLIC_AVATAR_URL` | `https://avatar.interviehire.com` |
 | dashboard | `NEXT_PUBLIC_API_URL` | backend on Render |
-| dashboard | `NEXT_PUBLIC_ENGINE_WEB_URL` | `https://interviehire.com` |
+| dashboard | `NEXT_PUBLIC_ENGINE_WEB_URL` | `https://interview.interviehire.com` |
