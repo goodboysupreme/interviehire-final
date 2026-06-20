@@ -3,11 +3,11 @@
   "rewrites": [
     {
       "source": "/interview",
-      "destination": "https://interviehire-candidate.vercel.app/interview"
+      "destination": "https://interviehire-ten.vercel.app/interview"
     },
     {
       "source": "/interview/:path*",
-      "destination": "https://interviehire-candidate.vercel.app/interview/:path*"
+      "destination": "https://interviehire-ten.vercel.app/interview/:path*"
     }
   ]
 }
