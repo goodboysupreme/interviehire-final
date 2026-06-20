@@ -261,7 +261,8 @@ def upload_jd(
 @router.post("/extract-jd")
 def extract_jd(
     file: UploadFile = File(...),
-    prompt: Optional[str] = Form(None)
+    prompt: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user)
 ):
     """Parses an uploaded PDF/DOCX job description and extracts details, refined by prompt guidelines."""
     import time
@@ -1592,6 +1593,8 @@ def add_applicant(
     applicant = Applicant(**data.model_dump(), job_id=job_id)
     if applicant.source == ApplicantSource.scheduled:
         applicant.screening_status = InterviewStatus.pending
+    elif applicant.source == ApplicantSource.functional:
+        applicant.functional_status = InterviewStatus.pending
     db.add(applicant)
     db.commit()
     db.refresh(applicant)
@@ -1627,6 +1630,8 @@ def add_applicants_bulk(
         applicant = Applicant(**app_in.model_dump(), job_id=job_id)
         if applicant.source == ApplicantSource.scheduled:
             applicant.screening_status = InterviewStatus.pending
+        elif applicant.source == ApplicantSource.functional:
+            applicant.functional_status = InterviewStatus.pending
         db.add(applicant)
         created_applicants.append(applicant)
         
@@ -1748,6 +1753,9 @@ def upload_resumes(
             # If the source is scheduled, ensure screening_status is set
             if existing_applicant.source == ApplicantSource.scheduled and not existing_applicant.screening_status:
                 existing_applicant.screening_status = InterviewStatus.pending
+            # If the source is functional, ensure functional_status is set
+            if existing_applicant.source == ApplicantSource.functional and not existing_applicant.functional_status:
+                existing_applicant.functional_status = InterviewStatus.pending
                 
             # Update candidate details if they were defaults or unset
             if parsed_email and ("@candidate.io" in existing_applicant.email or not existing_applicant.email):
@@ -1775,6 +1783,8 @@ def upload_resumes(
             )
             if applicant.source == ApplicantSource.scheduled:
                 applicant.screening_status = InterviewStatus.pending
+            elif applicant.source == ApplicantSource.functional:
+                applicant.functional_status = InterviewStatus.pending
             db.add(applicant)
             created_applicants.append(applicant)
         

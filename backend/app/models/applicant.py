@@ -28,6 +28,7 @@ class ApplicantSource(str, enum.Enum):
     direct_link = "direct_link"
     scheduled = "scheduled"
     ats = "ats"
+    functional = "functional"
 
 
 class Applicant(Base):
