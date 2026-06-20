@@ -64,6 +64,7 @@ export async function generateQuestions(input: {roleType: string; jobDescription
 
   try {
     const response = await callDeepSeekJson<DeepSeekQuestionResponse>({
+      task: 'questions',
       systemInstruction: 'You are an expert interview designer. Return strict JSON and include model answers for every question.',
       prompt,
       maxOutputTokens: Number(process.env.DEEPSEEK_QUESTION_MAX_TOKENS || 8000),

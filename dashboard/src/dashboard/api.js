@@ -197,6 +197,22 @@ function mapScreeningParamsIn(sp) {
   }));
 }
 
+// Dashboard screeningParams → backend screening_parameters (reverse of
+// mapScreeningParamsIn). Without this the screening grid — including recruiter
+// custom params — only lived in localStorage and never reached the backend.
+function mapScreeningParamsOut(screeningParams) {
+  const out = {};
+  arr(screeningParams).forEach((cat) => {
+    if (!cat || !cat.category) return;
+    out[cat.category.toLowerCase()] = arr(cat.params).map((p) => ({
+      parameter: p.name || '',
+      preferred_response: p.preferredResponse || '',
+      required: !!p.required,
+    }));
+  });
+  return out;
+}
+
 // Backend functional_parameters.topics[] → dashboard functionalParameters via the
 // engine factories (carries questionsDetailed → rubric when present).
 function mapFunctionalIn(fp) {
@@ -244,6 +260,9 @@ function mapJobToParametersPayload(job) {
       must_have: arr(rc.mustHave), red_flags: arr(rc.redFlags), good_to_have: arr(rc.goodToHave),
       ...(job.scoringConfig ? { scoring_config: job.scoringConfig } : {}),
     },
+    // Only send when present — the handler skips null fields, so a save from a
+    // job without screening params loaded won't wipe the backend's copy.
+    ...(arr(job.screeningParams).length ? { screening_parameters: mapScreeningParamsOut(job.screeningParams) } : {}),
   };
 }
 

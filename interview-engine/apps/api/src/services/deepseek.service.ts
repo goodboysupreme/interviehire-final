@@ -7,9 +7,20 @@ type DeepSeekJsonParams = {
   prompt: string;
   systemInstruction: string;
   model?: string;
+  task?: string;
   maxOutputTokens?: number;
   temperature?: number;
 };
+
+// Mixture-of-experts routing: a task can run on its own model via env
+// (DEEPSEEK_MODEL_<TASK>), falling back to the default. Assign a stronger/cheaper
+// expert per task in render.yaml with zero code change. ponytail: a model that
+// lacks JSON mode (most reasoning models) breaks json:true calls — only point a
+// JSON task at a JSON-capable model.
+function modelForTask(task?: string): string | undefined {
+  if (!task) return undefined;
+  return process.env[`DEEPSEEK_MODEL_${task.toUpperCase()}`] || undefined;
+}
 
 function getDeepSeekConfig() {
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -43,6 +54,7 @@ function extractJson(text: string): unknown {
 
 export async function callDeepSeek(messages: DeepSeekMessage[], options?: {
   model?: string;
+  task?: string;
   maxOutputTokens?: number;
   temperature?: number;
   json?: boolean;
@@ -55,7 +67,7 @@ export async function callDeepSeek(messages: DeepSeekMessage[], options?: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: options?.model || config.model,
+      model: options?.model || modelForTask(options?.task) || config.model,
       messages,
       temperature: options?.temperature ?? 0.2,
       max_tokens: options?.maxOutputTokens ?? 4096,
@@ -79,6 +91,7 @@ export async function callDeepSeekJson<T>(params: DeepSeekJsonParams): Promise<T
     ],
     {
       model: params.model,
+      task: params.task,
       maxOutputTokens: params.maxOutputTokens,
       temperature: params.temperature,
       json: true,

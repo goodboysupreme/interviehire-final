@@ -356,7 +356,10 @@ const ENRICH_BY_DIFFICULTY = {
 function buildOutlineMessages(job, opts = {}) {
   const seed = arr(opts.topicSeed).map((t) => clean(t.name)).filter(Boolean);
   const topicCount = seed.length || opts.topicCount || 4;
-  const perTopic = opts.questionsPerTopic || 2;
+  // ponytail: 30-min interview budget baked in. The AI sizes the outline to fit
+  // it dynamically (via each question's estimatedMinutes). Pass opts.targetMinutes
+  // from a recruiter input if rounds ever need a different length.
+  const targetMinutes = Math.max(5, Math.round(opts.targetMinutes || 30));
   const requirements = dedupeReqs(opts.requirements);
   const reqBlock = requirements.length
     ? `\n\nRequired competencies — cover EVERY one with at least one question and set that question's "targetRequirement" to the competency text VERBATIM:\n${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}`
@@ -373,7 +376,7 @@ Return ONLY JSON (no markdown), shape:
 {"topics":[{"name":"...","type":"Theoretical|Experiential","difficulty":"Easy|Medium|Hard","questions":[{"prompt":"...","questionType":"${QUESTION_TYPES.join('|')}","difficulty":"Easy|Medium|Hard","estimatedMinutes":3-6,"competency":"which capability this tests","targetRequirement":"the exact required competency this maps to, or empty"}]}]}
 
 Rules:
-- ~${topicCount} topics, ~${perTopic} questions each. Every required competency listed below MUST be tested by at least one question.
+- Size the whole interview to ~${targetMinutes} minutes: choose how many topics${seed.length ? ' (one per area below)' : ` (around ${topicCount})`} and how many questions each so the SUM of every question's estimatedMinutes is close to but does NOT exceed ${targetMinutes}. Every required competency listed below MUST be tested within that budget; add depth questions only if minutes remain.
 - targetRequirement: copy the matching competency VERBATIM from the numbered list; use "" only for an extra depth question that maps to none.
 - prompt: ONE idea, conversational, speakable aloud — no compound multi-part questions; prefer an applied scenario over a definition.
 - OUTLINE ONLY — do NOT include model answers or rubrics here.

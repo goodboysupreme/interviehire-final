@@ -136,17 +136,39 @@ function loadStateFromLocalStorage() {
   }
 }
 
-async function callDeepSeekAPI(messages, jsonMode = false) {
+// Mixture-of-experts routing: each task maps to the model best suited to it.
+// This single map IS the routing "infra" — callers pass a task, nothing else
+// changes. ponytail: deepseek-reasoner = stronger judgment but slower + no JSON
+// mode (the proxy drops response_format; parseAIJson extracts). Flip a task back
+// to 'deepseek-chat' here if its latency/cost bites — one line, no other edits.
+const MODEL_BY_TASK = {
+  default: 'deepseek-chat',
+  resumeExtract: 'deepseek-chat',   // pull facts — cheap + fast
+  resumeScore: 'deepseek-reasoner', // the judgment — let it reason
+  resumeCritique: 'deepseek-chat',  // narrative + sanity pass
+};
+const SLOW_MODELS = new Set(['deepseek-reasoner']); // reasoner can take >35s
+
+async function callDeepSeekAPI(messages, jsonMode = false, task = 'default') {
+  const model = MODEL_BY_TASK[task] || MODEL_BY_TASK.default;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 35000);
+  const timeoutId = setTimeout(() => controller.abort(), SLOW_MODELS.has(model) ? 90000 : 35000);
+  const body = JSON.stringify({ messages, jsonMode, model });
+  const send = () => fetch('/api/deepseek', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    signal: controller.signal,
+  });
 
   try {
-    const response = await fetch('/api/deepseek', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, jsonMode }),
-      signal: controller.signal
-    });
+    let response = await send();
+    // One retry on rate-limit: under bulk concurrency a 429 otherwise silently
+    // degrades this resume to the local keyword engine (worse score, no error).
+    if (response.status === 429) {
+      await new Promise(r => setTimeout(r, 1500));
+      response = await send();
+    }
 
     clearTimeout(timeoutId);
 

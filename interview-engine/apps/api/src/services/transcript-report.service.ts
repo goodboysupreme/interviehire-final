@@ -94,6 +94,7 @@ export async function generateTranscriptReport(sessionId: string) {
     .join('\n\n');
 
   const llm = await callDeepSeekJson<LlmReport>({
+    task: 'report',
     systemInstruction: [
       'You are a rigorous but fair technical interview evaluator.',
       `You are scoring a candidate for: ${roleTitle}.`,

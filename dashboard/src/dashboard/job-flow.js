@@ -883,6 +883,9 @@ function renderResumeAnalysisFlowConfig(job, panel) {
 function renderScreeningConfig(job, panel) {
   const params = job.screeningParams || [];
   const totalParams = params.reduce((a, c) => a + c.params.length, 0);
+  // AI-seeded categories render as fixed grids; custom params get editable rows.
+  const aiCats = params.filter(c => c.category !== 'Custom');
+  const customParams = (params.find(c => c.category === 'Custom') || {}).params || [];
 
   panel.innerHTML = `
     <div class="jf-config-header">
@@ -902,7 +905,7 @@ function renderScreeningConfig(job, panel) {
       <button class="jf-tab">Settings</button>
     </div>
 
-    ${params.map(cat => `
+    ${aiCats.map(cat => `
       <div class="jf-param-category">
         <h4 class="jf-param-category-title">
           ${cat.category === 'Experience' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>' :
@@ -930,6 +933,24 @@ function renderScreeningConfig(job, panel) {
       </div>
     `).join('')}
 
+    <div class="jf-custom-section" style="margin-top:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <h4 class="jf-param-category-title" style="margin:0;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Custom Parameters
+        </h4>
+        <button class="btn-jf-ghost" id="btn-add-screening-param" type="button" style="font-size:12px;">+ Add Parameter</button>
+      </div>
+      ${customParams.length ? customParams.map((p, i) => `
+        <div class="jf-custom-row" data-idx="${i}" style="display:flex;gap:8px;align-items:center;margin:6px 0;">
+          <input type="checkbox" class="jf-cp-req" ${p.required ? 'checked' : ''} title="Required" />
+          <input type="text" class="jf-input-sm jf-cp-name" value="${escapeHTML(p.name || '')}" placeholder="Parameter name…" style="flex:1;" />
+          <input type="text" class="jf-input-sm jf-cp-resp" value="${escapeHTML(p.preferredResponse || '')}" placeholder="Preferred response…" style="flex:2;" />
+          <button class="jf-cp-remove" type="button" title="Remove" style="background:none;border:none;color:var(--color-text-faint,#888);cursor:pointer;font-size:18px;line-height:1;">×</button>
+        </div>
+      `).join('') : '<div style="opacity:.6;padding:6px 0;font-size:13px;">No custom parameters yet — add one to screen on your own criteria.</div>'}
+    </div>
+
     <button class="btn-jf-primary" id="btn-screening-save" style="margin-top: 20px; width: 100%;">
       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
       Save Parameters
@@ -952,10 +973,14 @@ function renderScreeningConfig(job, panel) {
     });
   });
 
-  document.getElementById('btn-screening-save')?.addEventListener('click', () => {
+  // Read every row (AI grids + editable custom rows) back into job.screeningParams.
+  // Shared by Save and by the add/remove re-render, so in-progress edits in OTHER
+  // rows survive a re-render. Keeps blank custom rows (the one being typed); Save
+  // prunes them.
+  const commitRows = () => {
     panel.querySelectorAll('.jf-param-category').forEach(catEl => {
       const catTitle = catEl.querySelector('.jf-param-category-title')?.textContent.trim();
-      const cat = params.find(c => c.category === catTitle);
+      const cat = (job.screeningParams || []).find(c => c.category === catTitle);
       if (!cat) return;
       catEl.querySelectorAll('.jf-param-row').forEach(row => {
         const name = row.querySelector('.jf-pr-param')?.textContent.trim();
@@ -966,8 +991,42 @@ function renderScreeningConfig(job, panel) {
         param.preferredResponse = row.querySelector('.jf-pr-resp input')?.value || '';
       });
     });
-    job.screeningParams = params;
+    const customRows = [...panel.querySelectorAll('.jf-custom-row')].map(row => ({
+      name: row.querySelector('.jf-cp-name')?.value.trim() || '',
+      required: row.querySelector('.jf-cp-req')?.checked || false,
+      flexibility: 'Select',
+      preferredResponse: row.querySelector('.jf-cp-resp')?.value.trim() || '',
+    }));
+    const ai = (job.screeningParams || []).filter(c => c.category !== 'Custom');
+    job.screeningParams = customRows.length ? [...ai, { category: 'Custom', params: customRows }] : ai;
+  };
+
+  // Custom parameters: add / remove (commit edits first so other rows survive).
+  document.getElementById('btn-add-screening-param')?.addEventListener('click', () => {
+    commitRows();
+    let cat = (job.screeningParams || []).find(c => c.category === 'Custom');
+    if (!cat) { cat = { category: 'Custom', params: [] }; job.screeningParams = [...(job.screeningParams || []), cat]; }
+    cat.params.push({ name: '', required: false, flexibility: 'Select', preferredResponse: '' });
+    renderScreeningConfig(job, panel);
+    panel.querySelector('.jf-custom-row:last-of-type .jf-cp-name')?.focus();
+  });
+  panel.querySelectorAll('.jf-cp-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.closest('.jf-custom-row').dataset.idx, 10);
+      commitRows();
+      const cat = (job.screeningParams || []).find(c => c.category === 'Custom');
+      if (cat) cat.params.splice(idx, 1);
+      renderScreeningConfig(job, panel);
+    });
+  });
+
+  document.getElementById('btn-screening-save')?.addEventListener('click', () => {
+    commitRows();
+    // Drop blank custom rows, then drop an empty Custom category entirely.
+    (job.screeningParams || []).forEach(c => { if (c.category === 'Custom') c.params = c.params.filter(p => p.name); });
+    job.screeningParams = (job.screeningParams || []).filter(c => c.category !== 'Custom' || c.params.length);
     saveStateToLocalStorage();
+    scheduleJobSave(job); // the fix: these edits never reached the backend before
     showPremiumToast('Screening parameters saved.', 'success');
     panel.querySelectorAll('.jf-row-dirty').forEach(r => r.classList.remove('jf-row-dirty'));
   });
