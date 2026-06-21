@@ -516,6 +516,7 @@ function renderJobDetailPanes(job) {
         if (isResumeStage) {
           dd.innerHTML = `
             <button class="bulk-dd-item" data-action="analyse"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> Analyse</button>
+            <button class="bulk-dd-item" data-action="reanalyse"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Reanalyse</button>
             <button class="bulk-dd-item" data-action="advance"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg> Advance</button>
             <button class="bulk-dd-item" data-action="reject"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Reject</button>
             <button class="bulk-dd-item" data-action="export"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Export</button>`;
@@ -543,6 +544,12 @@ function renderJobDetailPanes(job) {
             dd.remove();
             showPremiumToast(`Analysing ${ids.length} candidate(s)...`, 'info');
             runBulkResumeAnalysis(ids, job);
+            return;
+          }
+          if (action === 'reanalyse') {
+            dd.remove();
+            showPremiumToast(`Reanalysing ${ids.length} candidate(s)...`, 'info');
+            runBulkResumeAnalysis(ids, job, { force: true });
             return;
           }
           if (action === 'advance') {

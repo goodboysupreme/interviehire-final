@@ -176,85 +176,158 @@ const daUi = { selectedId: null, openAnswerId: null, showAllDims: false, openDim
 // Live (api mode) report cache: candidateId -> { state:'loading'|'ready'|'pending'|'error', report?, error? }.
 const liveReports = new Map();
 
-function interviewedCandidates(job) {
+const hasFunctional = (c) => c.interviewStatus === 'Completed' && Number.isFinite(c.interviewScore);
+const hasResume = (c) => !!c.resumeAnalysis || c.matchScore != null;
+const hasScreening = (c) => !!c.recruiterScreening || c.recruiterScreeningScore != null;
+
+// Deep Analysis now holds ALL THREE result blocks per candidate (resume, screening,
+// functional), so the roster includes anyone with at least one result — not just
+// candidates who finished the interview (which left the tab empty pre-interview).
+function rosterCandidates(job) {
   return filterCandidatesByDateRange(AppState.candidates)
-    .filter((c) => (c.jobApplied === job.roleName || c.jobApplied === job.cardName) && c.interviewStatus === 'Completed' && Number.isFinite(c.interviewScore));
+    .filter((c) => (c.jobApplied === job.roleName || c.jobApplied === job.cardName) && (hasResume(c) || hasScreening(c) || hasFunctional(c)));
+}
+
+// One headline number per candidate: functional score if interviewed, else resume
+// match, else screening score. Null when nothing numeric exists yet.
+function headlineScore(c) {
+  if (hasFunctional(c)) return Math.round(c.interviewScore);
+  const m = (c.resumeAnalysis && c.resumeAnalysis.matchScore) ?? c.matchScore;
+  if (Number.isFinite(m)) return Math.round(m);
+  if (Number.isFinite(c.recruiterScreeningScore)) return Math.round(c.recruiterScreeningScore);
+  return null;
+}
+
+function rosterEntry(c) {
+  const score = headlineScore(c);
+  let recommendation = 'hold';
+  if (hasFunctional(c)) recommendation = recoFromScore(score);
+  else if (c.resumeAnalysis && c.resumeAnalysis.recommendation) {
+    const r = c.resumeAnalysis.recommendation;
+    recommendation = r === 'Advance' ? 'proceed' : r === 'Reject' ? 'reject' : 'hold';
+  } else if (c.recruiterScreening) {
+    recommendation = c.recruiterScreening === 'Good fit' ? 'proceed' : c.recruiterScreening === 'Poor fit' ? 'reject' : 'hold';
+  }
+  return { candidate: c, report: { overallScore: score, recommendation, recommendationConfidence: 'medium', redFlags: [], stages: { resume: hasResume(c), screening: hasScreening(c), functional: hasFunctional(c) } } };
 }
 
 const initials = (name) => (name || '?').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
 export function renderDeepAnalysisPane(job, container) {
   if (!job || !container) return;
-  // API mode pulls real CandidateReports from the backend — honest empty/pending
-  // until the eval engine scores an interview (no sample fabrication).
-  if (isApiMode() && job._backend) return renderLive(job, container);
+  const entries = rosterCandidates(job).map(rosterEntry)
+    .sort((a, b) => (b.report.overallScore ?? -1) - (a.report.overallScore ?? -1));
+  if (!entries.length) { container.innerHTML = `<div class="da-intel">${emptyState(isApiMode() && !!job._backend)}</div>`; return; }
 
-  const done = interviewedCandidates(job);
-  if (!done.length) { container.innerHTML = emptyState(false); return; }
-
-  const reports = done.map((c) => ({ candidate: c, report: buildSampleCandidateReport(c, job) }))
-    .sort((a, b) => b.report.overallScore - a.report.overallScore);
-
-  const selected = daUi.selectedId && reports.find((r) => r.candidate.id === daUi.selectedId);
-  container.innerHTML = `<div class="da-intel">${selected ? detailMarkup(selected, reports) : rosterMarkup(job, reports)}</div>`;
-  bind(container, job);
+  const selected = daUi.selectedId && entries.find((e) => e.candidate.id === daUi.selectedId);
+  if (!selected) { container.innerHTML = `<div class="da-intel">${rosterMarkup(job, entries)}</div>`; bind(container, job); return; }
+  renderDetail(job, container, selected.candidate);
 }
 
 // ── Live path (real backend) ──────────────────────────────────────────────────
 const recoFromScore = (s) => (s >= 88 ? 'strong_proceed' : s >= 72 ? 'proceed' : s >= 55 ? 'hold' : 'reject');
-// Roster entries only need score + recommendation; the full report is fetched on
-// drill-in. interviewScore is the backend's functional_score (real, not sampled).
-function liveRosterEntry(c) {
-  const s = Math.round(c.interviewScore);
-  return { candidate: c, report: { overallScore: s, recommendation: recoFromScore(s), recommendationConfidence: 'medium', redFlags: [] } };
-}
-
-function renderLive(job, container) {
-  const done = interviewedCandidates(job).map(liveRosterEntry).sort((a, b) => b.report.overallScore - a.report.overallScore);
-  if (!done.length) { container.innerHTML = `<div class="da-intel">${emptyState(true)}</div>`; return; }
-
-  const sel = daUi.selectedId && done.find((r) => r.candidate.id === daUi.selectedId);
-  if (!sel) { container.innerHTML = `<div class="da-intel">${rosterMarkup(job, done)}</div>`; bind(container, job); return; }
-
-  const entry = liveReports.get(sel.candidate.id);
-  if (!entry) {
-    liveReports.set(sel.candidate.id, { state: 'loading' });
-    apiFetchCandidateReport(sel.candidate.id)
-      .then((rep) => liveReports.set(sel.candidate.id, rep && Array.isArray(rep.questionBreakdown) ? { state: 'ready', report: rep } : { state: 'pending' }))
-      .catch((e) => liveReports.set(sel.candidate.id, { state: 'error', error: (e && e.message) || '' }))
-      .finally(() => { if (daUi.selectedId === sel.candidate.id && AppState.activeJobId === job.id) renderDeepAnalysisPane(job, container); });
-    container.innerHTML = `<div class="da-intel">${liveDetailShell(sel.candidate, 'loading')}</div>`;
-    bind(container, job); return;
+// Detail: three stacked blocks. Resume + screening render synchronously off the
+// candidate object; the functional block is sampled in local mode, or fetched live
+// in api mode (loading → ready/pending/error) without blocking the other two.
+function renderDetail(job, container, candidate) {
+  const apiLive = isApiMode() && !!job._backend;
+  let functionalHTML;
+  if (!hasFunctional(candidate)) {
+    functionalHTML = `<div class="da-li muted">No functional interview completed yet.</div>`;
+  } else if (!apiLive) {
+    functionalHTML = functionalReportBody(buildSampleCandidateReport(candidate, job));
+  } else {
+    const entry = liveReports.get(candidate.id);
+    if (!entry) {
+      liveReports.set(candidate.id, { state: 'loading' });
+      apiFetchCandidateReport(candidate.id)
+        .then((rep) => liveReports.set(candidate.id, rep && Array.isArray(rep.questionBreakdown) ? { state: 'ready', report: rep } : { state: 'pending' }))
+        .catch((e) => liveReports.set(candidate.id, { state: 'error', error: (e && e.message) || '' }))
+        .finally(() => { if (daUi.selectedId === candidate.id && AppState.activeJobId === job.id) renderDeepAnalysisPane(job, container); });
+      functionalHTML = functionalPending('loading');
+    } else if (entry.state === 'ready') {
+      functionalHTML = functionalReportBody(entry.report);
+    } else {
+      functionalHTML = functionalPending(entry.state, entry.error);
+    }
   }
-  container.innerHTML = `<div class="da-intel">${entry.state === 'ready'
-    ? detailMarkup({ candidate: sel.candidate, report: entry.report }, done)
-    : liveDetailShell(sel.candidate, entry.state, entry.error)}</div>`;
+  container.innerHTML = `<div class="da-intel">${detailShell(candidate, functionalHTML)}</div>`;
   bind(container, job);
 }
 
-function liveDetailShell(candidate, state, error) {
+function functionalPending(state, error) {
   const msg = state === 'loading'
-    ? ['Loading evaluation…', 'Fetching this candidate’s report from the live backend.']
+    ? ['Loading evaluation…', 'Fetching this candidate’s interview report from the backend.']
     : state === 'error'
       ? ['Couldn’t load the report', error || 'The backend did not return an evaluation.']
-      : ['Evaluation pending', 'This interview hasn’t been scored yet. The full report — dimensions, rubric coverage, red flags and a recommendation — appears here once the evaluation engine processes the transcript.'];
+      : ['Evaluation pending', 'This interview hasn’t been scored yet. Dimensions, rubric coverage, red flags and a recommendation appear here once the engine processes the transcript.'];
+  return `<div class="da-pending ${state === 'loading' ? 'is-loading' : ''}"><div class="da-pending-state">${escapeHTML(msg[0])}</div><div class="da-pending-desc">${escapeHTML(msg[1])}</div></div>`;
+}
+
+function sectionEmpty(title, copy) {
+  return `<div class="da-section"><h3 class="da-section-title">${escapeHTML(title)}</h3><div class="da-li muted">${escapeHTML(copy)}</div></div>`;
+}
+
+// Resume analysis block — match score + recommendation + evidenced strengths/gaps.
+function resumeBlock(c) {
+  const a = c.resumeAnalysis;
+  const score = (a && a.matchScore) ?? c.matchScore;
+  if (!a && score == null) return sectionEmpty('Resume analysis', 'Not analysed yet — run resume analysis on this candidate to populate this block.');
+  const reco = a && a.recommendation;
+  const strengths = (a && a.strengths) || [];
+  const gaps = (a && a.improvements) || [];
+  const recoColor = reco === 'Advance' ? '#34d399' : reco === 'Reject' ? '#f87171' : '#fbbf24';
   return `
-    <div class="da-detail-head"><button class="da-back" data-action="back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> All candidates</button></div>
-    <div class="da-pending ${state === 'loading' ? 'is-loading' : ''}">
-      <div class="da-pending-name">${escapeHTML(candidate.name)}</div>
-      <div class="da-pending-state">${escapeHTML(msg[0])}</div>
-      <div class="da-pending-desc">${escapeHTML(msg[1])}</div>
+    <div class="da-section">
+      <h3 class="da-section-title">Resume analysis${score != null ? `<span class="da-dim-count" style="color:${scoreColor(score)};">${Math.round(score)}</span>` : ''}${reco ? `<span class="da-reco-chip" style="color:${recoColor};border-color:${recoColor}40;background:${recoColor}14;">${escapeHTML(reco)}</span>` : ''}</h3>
+      ${strengths.length || gaps.length ? `
+        <div class="da-cols">
+          <div class="da-section da-half"><h3 class="da-section-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Strengths</h3>${strengths.length ? strengths.slice(0, 3).map((s) => `<div class="da-li ok">${escapeHTML(s)}</div>`).join('') : '<div class="da-li muted">None surfaced.</div>'}</div>
+          <div class="da-section da-half"><h3 class="da-section-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/></svg> Gaps</h3>${gaps.length ? gaps.slice(0, 3).map((s) => `<div class="da-li warn">${escapeHTML(s)}</div>`).join('') : '<div class="da-li muted">None surfaced.</div>'}</div>
+        </div>` : '<div class="da-li muted">Analysis recorded — open the full report for the breakdown.</div>'}
+    </div>`;
+}
+
+// Recruiter screening block — verdict + parameter match score + status.
+function screeningBlock(c) {
+  const verdict = c.recruiterScreening;
+  const score = c.recruiterScreeningScore;
+  if (!verdict && score == null) return sectionEmpty('Recruiter screening', 'Not screened yet — results appear here once the candidate completes the screening stage.');
+  const tone = verdict === 'Good fit' ? '#34d399' : verdict === 'Poor fit' ? '#f87171' : '#fbbf24';
+  return `
+    <div class="da-section">
+      <h3 class="da-section-title">Recruiter screening${verdict ? `<span class="da-reco-chip" style="color:${tone};border-color:${tone}40;background:${tone}14;">${escapeHTML(verdict)}</span>` : ''}${score != null ? `<span class="da-dim-count" style="color:${scoreColor(score)};">${Math.round(score)}</span>` : ''}</h3>
+      <div class="da-li">${score != null ? `Parameter match score ${Math.round(score)}/100` : 'Screening recorded'}${c.screeningStatus ? ` · status: ${escapeHTML(c.screeningStatus)}` : ''}.</div>
+    </div>`;
+}
+
+function detailShell(candidate, functionalHTML) {
+  return `
+    <div class="da-detail-head">
+      <button class="da-back" data-action="back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> All candidates</button>
+      <button class="da-open-report" data-action="open-report" data-cid="${escapeHTML(candidate.id)}" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);color:#cfcfcf;border-radius:7px;padding:6px 11px;font-size:12px;cursor:pointer;">Open full report <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+    </div>
+    <div class="da-detail-id" style="display:flex;align-items:center;gap:12px;margin:14px 0 4px;">
+      <span class="da-avatar" style="width:40px;height:40px;font-size:15px;">${escapeHTML(initials(candidate.name))}</span>
+      <div>
+        <div class="da-report-name">${escapeHTML(candidate.name)}</div>
+        <div class="da-report-role">${escapeHTML(candidate.jobApplied || '')}</div>
+      </div>
+    </div>
+    ${resumeBlock(candidate)}
+    ${screeningBlock(candidate)}
+    <div class="da-section">
+      <h3 class="da-section-title">Functional interview</h3>
+      ${functionalHTML}
     </div>`;
 }
 
 function emptyState(apiMode) {
-  const desc = apiMode
-    ? 'No candidate has completed the AI interview for this role yet. Once an interview is completed and scored by the evaluation engine, the full report — scores, dimensions, rubric coverage, red flags and a hire recommendation — appears here, ranked.'
-    : 'Once candidates complete the AI interview, their full evaluation reports — scores, dimensions, rubric coverage, red flags and a hire recommendation — appear here, ranked.';
+  const desc = 'Run resume analysis, recruiter screening or the AI interview on a candidate and they appear here — each row holds all three result blocks, ranked by score, drilling into one full evaluation report.';
   return `
   <div class="da-empty">
     <div class="da-empty-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/><line x1="9" y1="11" x2="13" y2="11"/></svg></div>
-    <p class="da-empty-title">No completed interviews yet</p>
+    <p class="da-empty-title">No analysed candidates yet</p>
     <p class="da-empty-desc">${desc}</p>
   </div>`;
 }
@@ -262,18 +335,19 @@ function emptyState(apiMode) {
 function rosterMarkup(job, reports) {
   const dist = {};
   reports.forEach((r) => { dist[r.report.recommendation] = (dist[r.report.recommendation] || 0) + 1; });
-  const flagged = reports.filter((r) => r.report.redFlags.some((f) => f.severity === 'high' || f.severity === 'critical')).length;
-  const avg = Math.round(reports.reduce((a, r) => a + r.report.overallScore, 0) / reports.length);
+  const scored = reports.map((r) => r.report.overallScore).filter((s) => Number.isFinite(s));
+  const avg = scored.length ? Math.round(scored.reduce((a, s) => a + s, 0) / scored.length) : 0;
+  const interviewed = reports.filter((r) => r.report.stages && r.report.stages.functional).length;
 
   return `
     <div class="da-roster-head">
-      <div><h2 class="da-title">Candidate intelligence</h2><p class="da-sub">${reports.length} completed interview${reports.length !== 1 ? 's' : ''} · ranked by evaluation score</p></div>
+      <div><h2 class="da-title">Candidate intelligence</h2><p class="da-sub">${reports.length} analysed candidate${reports.length !== 1 ? 's' : ''} · resume, screening &amp; interview · ranked by score</p></div>
     </div>
     <div class="da-stat-strip">
-      <div class="da-stat"><span class="da-stat-num">${reports.length}</span><span class="da-stat-label">Interviewed</span></div>
+      <div class="da-stat"><span class="da-stat-num">${reports.length}</span><span class="da-stat-label">Candidates</span></div>
       <div class="da-stat"><span class="da-stat-num" style="color:${scoreColor(avg)};">${avg}</span><span class="da-stat-label">Avg score</span></div>
       <div class="da-stat"><span class="da-stat-num" style="color:#2dd4bf;">${(dist.strong_proceed || 0) + (dist.proceed || 0)}</span><span class="da-stat-label">Proceed</span></div>
-      <div class="da-stat"><span class="da-stat-num" style="color:${flagged ? '#fb923c' : '#9a9a9a'};">${flagged}</span><span class="da-stat-label">Flagged</span></div>
+      <div class="da-stat"><span class="da-stat-num" style="color:${interviewed ? '#34d399' : '#9a9a9a'};">${interviewed}</span><span class="da-stat-label">Interviewed</span></div>
     </div>
     <div class="da-roster">
       ${reports.map((r, i) => rosterRow(r, i)).join('')}
@@ -281,43 +355,41 @@ function rosterMarkup(job, reports) {
 }
 
 function rosterRow({ candidate, report }, i) {
-  const reco = RECO_META[report.recommendation];
-  const flag = report.redFlags.find((f) => f.severity === 'critical') || report.redFlags.find((f) => f.severity === 'high');
+  const reco = RECO_META[report.recommendation] || RECO_META.hold;
+  const s = report.overallScore;
+  const st = report.stages || {};
+  const dot = (on, label) => `<span title="${label}${on ? '' : ' — pending'}" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:5px;font-size:10px;font-weight:700;background:${on ? 'rgba(45,212,191,.14)' : 'rgba(255,255,255,.04)'};color:${on ? '#2dd4bf' : '#6b6b6b'};border:1px solid ${on ? 'rgba(45,212,191,.35)' : 'rgba(255,255,255,.08)'};">${label[0]}</span>`;
   return `
   <div class="da-row" data-action="select" data-cid="${candidate.id}" role="button" tabindex="0">
     <span class="da-rank">${i + 1}</span>
     <span class="da-avatar">${escapeHTML(initials(candidate.name))}</span>
     <div class="da-row-id">
       <span class="da-row-name">${escapeHTML(candidate.name)}</span>
-      <span class="da-row-meta">${escapeHTML(candidate.source || 'Applicant')}${flag ? ` · <span style="color:${SEV_COLOR[flag.severity]}">${flag.severity} flag</span>` : ''}</span>
+      <span class="da-row-meta">${escapeHTML(candidate.source || 'Applicant')}</span>
     </div>
-    <span class="da-row-conf" style="color:${CONF_COLOR[report.recommendationConfidence]};" title="recommendation confidence">${report.recommendationConfidence}</span>
+    <span class="da-row-conf" title="Resume · Screening · Functional" style="display:inline-flex;gap:4px;">${dot(st.resume, 'Resume')}${dot(st.screening, 'Screening')}${dot(st.functional, 'Functional')}</span>
     <span class="da-reco-chip" style="color:${reco.color};border-color:${reco.color}40;background:${reco.color}14;">${reco.label}</span>
-    <span class="da-row-score" style="color:${scoreColor(report.overallScore)};">${report.overallScore}</span>
+    <span class="da-row-score" style="color:${s != null ? scoreColor(s) : '#9a9a9a'};">${s != null ? s : '—'}</span>
     <svg class="da-row-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
   </div>`;
 }
 
-function detailMarkup({ candidate, report }, allReports) {
-  const reco = RECO_META[report.recommendation];
+function functionalReportBody(report) {
+  const reco = RECO_META[report.recommendation] || RECO_META.hold;
   const band = scoreColor(report.overallScore);
-  const critical = report.redFlags.filter((f) => f.severity === 'critical');
+  const critical = (report.redFlags || []).filter((f) => f.severity === 'critical');
   return `
-    <div class="da-detail-head">
-      <button class="da-back" data-action="back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> All candidates</button>
-    </div>
-
     ${critical.length ? `<div class="da-critical-banner"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Critical red flag — human review required before any decision.</div>` : ''}
 
     <div class="da-report-top">
       <div class="da-ring" style="--p:${report.overallScore};--c:${band};"><span class="da-ring-num">${report.overallScore}</span><span class="da-ring-of">/100</span></div>
       <div class="da-report-id">
-        <div class="da-report-name">${escapeHTML(candidate.name)}<span class="da-report-role">${escapeHTML(report.roleTitle)}</span></div>
+        <div class="da-report-name">Interview evaluation<span class="da-report-role">${escapeHTML(report.roleTitle || '')}</span></div>
         <div class="da-report-chips">
           <span class="da-reco-chip lg" style="color:${reco.color};border-color:${reco.color}40;background:${reco.color}14;">${reco.label}</span>
           <span class="da-conf-chip" style="color:${CONF_COLOR[report.recommendationConfidence]};">${report.recommendationConfidence} confidence</span>
         </div>
-        <p class="da-summary">${escapeHTML(report.summary)}</p>
+        <p class="da-summary">${escapeHTML(report.summary || '')}</p>
       </div>
     </div>
 
@@ -444,6 +516,7 @@ function bind(container, job) {
     const action = el.dataset.action;
     if (action === 'select') { daUi.selectedId = el.dataset.cid; daUi.openAnswerId = null; daUi.openDimKey = null; daUi.showAllDims = false; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'back') { daUi.selectedId = null; daUi.openDimKey = null; daUi.showAllDims = false; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
+    else if (action === 'open-report') { soundEngine.playClick(); const cid = el.dataset.cid; import('./report-page.js').then((m) => m.openCandidateReportPage && m.openCandidateReportPage(cid)); }
     else if (action === 'toggle-answer') { const a = el.dataset.aid; daUi.openAnswerId = daUi.openAnswerId === a ? null : a; daUi.openDimKey = null; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'toggle-dims') { daUi.showAllDims = !daUi.showAllDims; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'toggle-dim') { const k = `${el.dataset.aid}::${el.dataset.dim}`; daUi.openDimKey = daUi.openDimKey === k ? null : k; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }

@@ -327,6 +327,14 @@ function mapApplicantOutToCandidate(a = {}) {
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,
     matchScore: a.match_score ?? null,
     decision: a.decision ?? null,
+    // Recruiter screening result — the backend sends these (ApplicantOut), the
+    // dashboard's report + Deep Analysis read them off the candidate. Without this
+    // mapping the screening block stays blank in api mode even when scored.
+    recruiterScreening: a.recruiter_screening ?? null,
+    recruiterScreeningScore: a.recruiter_screening_score ?? null,
+    screeningStatus: mapInterviewStatus(a.screening_status),
+    screeningScore: a.screening_score ?? null,
+    attemptedAt: a.attempted_at ?? null,
     // Rehydrate the stored analysis so a re-opened report shows the saved result
     // instead of re-scoring from scratch.
     ...(() => { try { const p = a.resume_analysis_report ? JSON.parse(a.resume_analysis_report) : null; return p ? { resumeAnalysis: p } : {}; } catch { return {}; } })(),

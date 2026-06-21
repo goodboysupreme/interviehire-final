@@ -6,6 +6,7 @@ import { navigateToTab, openDrawer } from './navigation.js';
 import { updateAllSlidingPills } from './pills.js';
 import { applyDateRangeGlobally, renderAnalyticsTable, renderJobCards, updateSummaryMetrics } from './render-views.js';
 import { isGarbageText, resumeIdentityCache, resumeTextCache, runBulkResumeAnalysis } from './resume-analysis.js';
+import { isApiMode, apiAddApplicant } from './api.js';
 import { soundEngine } from './sound.js';
 import { AppState } from './state.js';
 import { pushUrl } from './url-sync.js';
@@ -617,15 +618,14 @@ function renderCsvPreview() {
   soundEngine.playChime([392.00, 523.25], 0.15, 0.08);
 }
 
-function importCsvCandidates() {
+async function importCsvCandidates() {
   if (csvParsedCandidates.length === 0) return;
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
-  csvParsedCandidates.forEach(cand => {
-    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob);
-  });
+  const localIds = csvParsedCandidates.map(cand =>
+    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob));
 
   soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
   showPremiumToast(`Successfully imported ${csvParsedCandidates.length} candidate(s) into "${escapeHTML(activeJob.roleName)}".`, "success");
@@ -651,6 +651,9 @@ function importCsvCandidates() {
     renderJobCards();
   }
 
+  // Persist to the backend BEFORE navigating — the job-detail hydrate then fetches
+  // and shows them, so no manual refresh is needed (api mode).
+  await persistImportedCandidates(localIds, activeJob);
   navigateToJobDetail(AppState.activeJobId);
 }
 
@@ -798,7 +801,7 @@ async function extractTextFromResumeFile(file) {
   return '';
 }
 
-function importResumesCandidates() {
+async function importResumesCandidates() {
   if (uploadedFiles.length === 0) return;
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
@@ -837,11 +840,14 @@ function importResumesCandidates() {
     renderJobCards();
   }
 
+  // Persist first so the candidates survive the hydrate (no manual refresh), then
+  // analyse against their real backend ids (the resume caches were re-keyed).
+  const backendIds = await persistImportedCandidates(importedCandIds, activeJob);
   navigateToJobDetail(AppState.activeJobId);
 
   if (currentSourcingMode === 'analyse') {
     setTimeout(() => {
-      runBulkResumeAnalysis(importedCandIds, activeJob);
+      runBulkResumeAnalysis(backendIds, activeJob);
     }, 600);
   }
 }
@@ -1067,15 +1073,14 @@ function renderManualQueue() {
   `).join('');
 }
 
-function importManualQueue() {
+async function importManualQueue() {
   if (sourcingQueue.length === 0) return;
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
-  sourcingQueue.forEach(cand => {
-    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob);
-  });
+  const localIds = sourcingQueue.map(cand =>
+    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob));
 
   soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
   showPremiumToast(`Successfully imported ${sourcingQueue.length} candidate(s) into "${escapeHTML(activeJob.roleName)}".`, "success");
@@ -1087,13 +1092,15 @@ function importManualQueue() {
   recalculateJobPipelines();
   updateSummaryMetrics();
   renderAnalyticsTable();
-  
+
   if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
     renderKanbanBoard();
   } else {
     renderJobCards();
   }
 
+  // Persist before navigating so the hydrate shows them without a manual refresh.
+  await persistImportedCandidates(localIds, activeJob);
   navigateToJobDetail(AppState.activeJobId);
 }
 
@@ -1140,6 +1147,46 @@ function addCandidateToAppState(name, email, phone, job, resumeText) {
   }
 
   return candId;
+}
+
+// In api mode an imported candidate starts as a local "CAN-…" row; persist each to
+// the backend so it survives hydrateBackendApplicants (which replaces the in-memory
+// list with the backend's copy on the next job-detail render). Without this the row
+// only shows after a manual page refresh. Re-keys the resume caches CAN-… → backend
+// UUID and sets cand.jobId so hydrate dedups; returns the surviving id list for
+// downstream use (e.g. bulk analysis).
+// A create can fail (duplicate/blank email, backend down). In api mode a local-only
+// row CANNOT be shown for a backend job — the job-detail filter requires
+// jobId === job.id, which the next hydrate then wipes — so rather than leave an
+// invisible ghost (silent loss), we drop the failed rows and tell the recruiter
+// exactly who failed and why, so they can fix and re-import.
+async function persistImportedCandidates(localIds, job) {
+  if (!isApiMode() || !job || !job._backend) return localIds;
+  const ids = [];
+  const failed = [];
+  for (const localId of localIds) {
+    const cand = AppState.candidates.find((c) => c.id === localId);
+    if (!cand) continue;
+    try {
+      const created = await apiAddApplicant(job.id, { name: cand.name, email: cand.email, phone: cand.phone });
+      if (!created || !created.id) throw new Error('no id returned');
+      const uuid = created.id;
+      if (resumeTextCache[localId] != null) { resumeTextCache[uuid] = resumeTextCache[localId]; delete resumeTextCache[localId]; }
+      if (resumeIdentityCache[localId] != null) { resumeIdentityCache[uuid] = resumeIdentityCache[localId]; delete resumeIdentityCache[localId]; }
+      cand.id = uuid; cand.jobId = job.id; cand._backend = true;
+      ids.push(uuid);
+    } catch (e) {
+      failed.push(cand);
+    }
+  }
+  if (failed.length) {
+    const failedIds = new Set(failed.map((c) => c.id));
+    AppState.candidates = AppState.candidates.filter((c) => !failedIds.has(c.id));
+    failed.forEach((c) => { delete resumeTextCache[c.id]; delete resumeIdentityCache[c.id]; });
+    const names = failed.map((c) => c.name).slice(0, 3).join(', ') + (failed.length > 3 ? ` +${failed.length - 3} more` : '');
+    showPremiumToast(`Couldn't save ${failed.length} candidate(s) to the backend (${names}) — check for duplicate or blank emails and re-import.`, 'error');
+  }
+  return ids;
 }
 
 function showPremiumToast(message, type = 'success', action = null) {
