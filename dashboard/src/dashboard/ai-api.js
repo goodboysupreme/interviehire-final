@@ -565,5 +565,30 @@ Specifically:
   }
 }
 
+// Suggest ADDITIONAL resume-screening criteria (not already listed) for a role.
+// Returns {mustHave, redFlags, goodToHave} arrays. Throws on AI failure so the
+// caller can fall back. Reuses the same DeepSeek proxy as enrichJobWithAI.
+async function generateResumeCriteriaSuggestions(job) {
+  const jd = (job.description || '').slice(0, 6000);
+  const c = job.resumeCriteria || {};
+  const list = (a) => (Array.isArray(a) && a.length ? a.join('; ') : '(none)');
+  const system = `You are an expert HR analyst. Suggest ADDITIONAL resume-screening criteria for this role that are NOT already listed. Return ONLY valid JSON:
+{"mustHave":["..."],"redFlags":["..."],"goodToHave":["..."]}
+Rules:
+- 3-5 items per group, each a short specific phrase tailored to the role.
+- Do NOT repeat or paraphrase anything already listed.
+- No preamble, no commentary.`;
+  const user = `Role: ${job.roleName || job.cardName || 'the role'}${job.experienceBand ? ` (${job.experienceBand})` : ''}
+Already listed —
+Must have: ${list(c.mustHave)}
+Red flags: ${list(c.redFlags)}
+Good to have: ${list(c.goodToHave)}
+${jd ? `\nJob description:\n${jd}` : ''}`;
+  const raw = await callDeepSeekAPI([{ role: 'system', content: system }, { role: 'user', content: user }], true);
+  const parsed = parseAIJson(raw);
+  const arr = (x) => (Array.isArray(x) ? x.map((s) => String(s).trim()).filter(Boolean) : []);
+  return { mustHave: arr(parsed?.mustHave), redFlags: arr(parsed?.redFlags), goodToHave: arr(parsed?.goodToHave) };
+}
 
-export { auditJobDescriptionLocally, callDeepSeekAPI, enrichJobWithAI, loadStateFromLocalStorage, optimizeJobDescriptionWithAI, parseAIJson, sanitizeJSONResponse, saveStateToLocalStorage };
+
+export { auditJobDescriptionLocally, callDeepSeekAPI, enrichJobWithAI, generateResumeCriteriaSuggestions, loadStateFromLocalStorage, optimizeJobDescriptionWithAI, parseAIJson, sanitizeJSONResponse, saveStateToLocalStorage };

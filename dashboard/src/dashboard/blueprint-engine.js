@@ -583,6 +583,49 @@ export async function generateScenarioVariant(job, qb) {
   return nb;
 }
 
+// ── Difficulty retune: rewrite a question to fit a newly chosen difficulty ────
+// Same competency, recalibrated so an Easy↔Hard swap yields a genuinely easier/
+// harder question with a matching model answer + rubric. An AI avatar asks it.
+function buildDifficultyMessages(job, qb, target) {
+  const competency = clean(qb.competency) || clean(qb.prompt);
+  const system = `You rewrite an interview question to hit a TARGET difficulty while testing the SAME competency. Easier = foundational, single-step recall; harder = deeper reasoning, edge cases, trade-offs, multi-step judgment. An AI avatar asks it aloud.
+
+Return ONLY JSON (no markdown), shape:
+{"prompt":"...","questionType":"${QUESTION_TYPES.join('|')}","difficulty":"${target}","estimatedMinutes":3-6,"competency":"...","modelAnswer":"what a strong answer covers at this difficulty, 2-3 sentences",${RUBRIC_SHAPE},"followUpIntent":"when/how to probe deeper"}
+
+Rules:
+- Keep the SAME underlying competency: "${competency}".
+- Calibrate the question, model answer, and rubric to "${target}" difficulty.
+- difficulty MUST be "${target}".
+- prompt: ONE idea, conversational, speakable aloud — no compound multi-part questions.
+- No preamble.`;
+  const user = `Role: ${clean(job.roleName) || clean(job.cardName) || 'the role'}${job.experienceBand ? ` (${job.experienceBand})` : ''}
+Current question: ${clean(qb.prompt)}
+Competency to keep testing: ${competency}
+Rewrite it to be ${target} difficulty.`;
+  return [{ role: 'system', content: system }, { role: 'user', content: user }];
+}
+
+export async function generateDifficultyVariant(job, qb, target) {
+  const difficulty = oneOf(target, CONTRACT_DIFFICULTY, qb.difficulty);
+  const parsed = await callJson(buildDifficultyMessages(job, qb, difficulty));
+  const nb = createQuestionBlueprint({
+    ...parsed,
+    difficulty,
+    competency: clean(parsed?.competency) || qb.competency,
+  });
+  if (!nb.prompt) throw new Error('empty difficulty variant');
+  return nb;
+}
+
+// ponytail: keyless fallback can't truly rewrite — keeps the prompt, just retargets
+// difficulty + time. Upgrade path: a local templated rewrite per level if needed.
+export function localDifficultyVariant(qb, target) {
+  const difficulty = oneOf(target, CONTRACT_DIFFICULTY, 'Medium');
+  const estimatedMinutes = difficulty === 'Easy' ? 3 : difficulty === 'Hard' ? 6 : 4;
+  return createQuestionBlueprint({ ...qb, difficulty, estimatedMinutes });
+}
+
 // ── Normalization (coerce any AI/legacy payload into the contract shape) ─────
 export function normalizeFunctionalBlueprint(parsed) {
   const topics = arr(parsed?.topics).length ? parsed.topics : arr(parsed);

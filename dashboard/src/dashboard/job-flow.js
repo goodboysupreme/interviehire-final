@@ -1,7 +1,7 @@
 import { document, setTimeout } from './runtime.js';
 import { escapeHTML } from './escape.js';
 import { EXPERIENCE_BANDS, DIFFICULTY_LEVELS } from './constants.js';
-import { saveStateToLocalStorage } from './ai-api.js';
+import { saveStateToLocalStorage, generateResumeCriteriaSuggestions } from './ai-api.js';
 import { scheduleJobSave } from './api.js';
 import { navigateToJobDetail } from './job-detail.js';
 import { recalculateJobPipelines } from './kanban-swarm.js';
@@ -20,6 +20,29 @@ import { openReportDrawerForCandidate } from './report.js';
 // ==========================================
 // JOB FLOW PIPELINE VIEW
 // ==========================================
+
+// Tracks the job whose post-creation "Add Candidates" banner should stay shown,
+// so the React route echo (navigateToPath → flagless openJobFlowView) can't wipe it.
+let pendingAddCandidates = null;
+
+// Transient resume-criteria suggestion pop-up (one group at a time).
+let raSuggest = { group: null, loading: false, items: null };
+const RA_SUGGEST_FALLBACK = {
+  mustHave: ['Relevant domain experience', 'Proven track record in the core skill', 'Ownership of end-to-end delivery', 'Strong written and verbal communication'],
+  redFlags: ['Frequent unexplained job hopping', 'No hands-on experience in the core area', 'Unexplained employment gaps'],
+  goodToHave: ['Relevant professional certification', 'Experience at a comparable company', 'Exposure to adjacent tools or domains'],
+};
+function raSuggestPanel(groupKey, tone) {
+  if (raSuggest.loading && raSuggest.group === groupKey) {
+    return `<div class="ra-suggest-panel"><div class="ra-suggest-loading">Finding suggestions…</div></div>`;
+  }
+  const items = (raSuggest.group === groupKey && raSuggest.items) ? raSuggest.items : [];
+  if (!items.length) return '';
+  return `<div class="ra-suggest-panel">
+    <div class="ra-suggest-head"><span>Suggestions — click to add</span><button class="ra-suggest-dismiss" type="button" data-group="${groupKey}" title="Dismiss">×</button></div>
+    ${items.map((t, i) => `<button class="ra-suggest-chip ${tone}" type="button" data-group="${groupKey}" data-idx="${i}">+ ${escapeHTML(t)}</button>`).join('')}
+  </div>`;
+}
 
 // Dynamic header manager for Job Flow and Sourcing
 function toggleHeaderElementsForJobFlow(showJobFlowHeader, job = null) {
@@ -226,6 +249,9 @@ function openJobFlowView(jobId, showAddCandidates = false) {
   const job = AppState.jobs.find(j => j.id === jobId);
   if (!job) return;
 
+  // Opening a different job's flow drops any pending banner intent from the last one.
+  if (pendingAddCandidates && pendingAddCandidates !== jobId) pendingAddCandidates = null;
+
   // Initialize pipeline config if not present
   if (!job.pipelineConfig) {
     job.pipelineConfig = {
@@ -272,11 +298,16 @@ function openJobFlowView(jobId, showAddCandidates = false) {
   renderJobFlowPipeline(job);
   renderJobFlowConfig(job, 'careerPage');
 
-  // Add Candidates banner after fresh AI-generated job creation
+  // Add Candidates banner after fresh AI-generated job creation. The intent
+  // survives the React route echo (flagless re-entry) so it stays until the
+  // recruiter acts on it, instead of flashing for ~1s and vanishing.
+  if (showAddCandidates) pendingAddCandidates = jobId;
+  const wantBanner = showAddCandidates || pendingAddCandidates === jobId;
+
   const existingBanner = document.getElementById('jf-add-candidates-banner');
   if (existingBanner) existingBanner.remove();
 
-  if (showAddCandidates) {
+  if (wantBanner) {
     const banner = document.createElement('div');
     banner.id = 'jf-add-candidates-banner';
     banner.className = 'jf-candidates-banner card-glass';
@@ -300,13 +331,16 @@ function openJobFlowView(jobId, showAddCandidates = false) {
     flowView.insertBefore(banner, flowView.firstChild);
 
     document.getElementById('jf-btn-review-flow')?.addEventListener('click', () => {
+      pendingAddCandidates = null;
       banner.classList.add('jf-banner-dismissing');
       setTimeout(() => banner.remove(), 300);
     });
     document.getElementById('jf-btn-publish-job')?.addEventListener('click', () => {
+      pendingAddCandidates = null;
       openPublishJobModal(jobId);
     });
     document.getElementById('jf-btn-add-candidates').addEventListener('click', () => {
+      pendingAddCandidates = null;
       banner.remove();
       navigateToSourcing(jobId);
     });
@@ -757,7 +791,15 @@ function renderResumeAnalysisFlowConfig(job, panel) {
         <span class="ra-criteria-text">${item}</span>
       </div>
     `).join('');
-    return html + (isEditing ? `<button class="btn-ra-add-criteria" type="button" data-group="${groupKey}" data-tone="${tone}">+ Add Criterion</button>` : '');
+    if (!isEditing) return html;
+    const busy = raSuggest.loading && raSuggest.group === groupKey;
+    return html
+      + `<div class="ra-edit-actions">`
+      + `<button class="btn-ra-add-criteria" type="button" data-group="${groupKey}" data-tone="${tone}">+ Add Criterion</button>`
+      + `<button class="btn-ra-suggest" type="button" data-group="${groupKey}" data-tone="${tone}" ${busy ? 'disabled' : ''}>`
+      + `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/><path d="M9 18h6"/><path d="M10 22h4"/></svg> ${busy ? 'Suggesting…' : 'Suggest'}</button>`
+      + `</div>`
+      + (raSuggest.group === groupKey ? raSuggestPanel(groupKey, tone) : '');
   };
 
   panel.innerHTML = `
@@ -853,8 +895,55 @@ function renderResumeAnalysisFlowConfig(job, panel) {
     });
   });
 
+  const syncResumeFromDom = () => {
+    const next = { ...criteria, mustHave: [], redFlags: [], goodToHave: [] };
+    panel.querySelectorAll('.ra-criteria-group.must-have .ra-criteria-edit-input').forEach(i => { if (i.value.trim()) next.mustHave.push(i.value.trim()); });
+    panel.querySelectorAll('.ra-criteria-group.red-flags .ra-criteria-edit-input').forEach(i => { if (i.value.trim()) next.redFlags.push(i.value.trim()); });
+    panel.querySelectorAll('.ra-criteria-group.good-to-have .ra-criteria-edit-input').forEach(i => { if (i.value.trim()) next.goodToHave.push(i.value.trim()); });
+    const min = parseInt(panel.querySelector('.ra-min-match-input')?.value, 10);
+    if (Number.isFinite(min)) next.goodToHaveMinMatch = min;
+    job.resumeCriteria = next;
+  };
+
+  panel.querySelectorAll('.btn-ra-suggest').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (raSuggest.loading) return;
+      const group = btn.dataset.group;
+      syncResumeFromDom();
+      raSuggest = { group, loading: true, items: null };
+      renderResumeAnalysisFlowConfig(job, panel);
+      let items;
+      try { items = (await generateResumeCriteriaSuggestions(job))[group] || []; }
+      catch { items = RA_SUGGEST_FALLBACK[group] || []; }
+      const have = new Set((job.resumeCriteria?.[group] || []).map(x => String(x).trim().toLowerCase()));
+      items = items.map(x => String(x).trim()).filter(x => x && !have.has(x.toLowerCase()));
+      raSuggest = { group, loading: false, items };
+      renderResumeAnalysisFlowConfig(job, panel);
+      if (!items.length) showPremiumToast('No new suggestions for this group.', 'info');
+    });
+  });
+
+  panel.querySelectorAll('.ra-suggest-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const group = btn.dataset.group;
+      const idx = Number(btn.dataset.idx);
+      const item = raSuggest.items?.[idx];
+      if (!item) return;
+      syncResumeFromDom();
+      if (!Array.isArray(job.resumeCriteria[group])) job.resumeCriteria[group] = [];
+      job.resumeCriteria[group].push(item);
+      raSuggest.items = raSuggest.items.filter((_, i) => i !== idx);
+      renderResumeAnalysisFlowConfig(job, panel);
+    });
+  });
+
+  panel.querySelectorAll('.ra-suggest-dismiss').forEach(btn => {
+    btn.addEventListener('click', () => { raSuggest = { group: null, loading: false, items: null }; renderResumeAnalysisFlowConfig(job, panel); });
+  });
+
   document.getElementById('jf-btn-edit-resume')?.addEventListener('click', () => {
     if (!isEditing) {
+      raSuggest = { group: null, loading: false, items: null };
       panel.dataset.raEditing = 'true';
       renderResumeAnalysisFlowConfig(job, panel);
       return;
@@ -873,6 +962,7 @@ function renderResumeAnalysisFlowConfig(job, panel) {
     const min = parseInt(panel.querySelector('.ra-min-match-input')?.value, 10);
     next.goodToHaveMinMatch = Math.min(Math.max(Number.isFinite(min) ? min : 1, 1), Math.max(next.goodToHave.length, 1));
     job.resumeCriteria = next;
+    raSuggest = { group: null, loading: false, items: null };
     panel.dataset.raEditing = 'false';
     saveStateToLocalStorage();
     scheduleJobSave(job);

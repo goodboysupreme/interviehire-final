@@ -13,9 +13,9 @@ import { isApiMode, apiPatchJobParameters } from './api.js';
 import {
   MODE_FUNCTIONAL, MODE_SCREENING, CONTRACT_DIFFICULTY, TOPIC_TYPES, QUESTION_TYPES, SEVERITY_LEVELS,
   migrateLegacyQuestions, emptyScreeningBlueprint, createTopic, createQuestionBlueprint, createRubricPoint, createRedFlag,
-  generateFunctionalOutline, enrichQuestionRubric, generateScreeningQuestions, generateGapQuestion, generateScenarioVariant,
+  generateFunctionalOutline, enrichQuestionRubric, generateScreeningQuestions, generateGapQuestion, generateScenarioVariant, generateDifficultyVariant,
   computeGenerationPlan, analyzeRequirements, pinBlueprintToRequirements, mergeBlueprintPreservingEdits,
-  localFunctionalBlueprint, localScreeningQuestions, localGapQuestion, localScenarioVariant,
+  localFunctionalBlueprint, localScreeningQuestions, localGapQuestion, localScenarioVariant, localDifficultyVariant,
   computeCoverage, computeCalibration, computeBandFit, rubricStrength, critiqueRubric, critiqueBlueprint, leakageRisk,
   createTopicSuggestion, suggestTopics, localTopicSuggestions,
   autofillOutlineNotes, runSheetMarkdown, normalizeInterviewStructure, topicMinutes,
@@ -39,6 +39,9 @@ const studioUi = {
   // Suggested-topics curation gate (transient until Generate runs).
   topicSuggestions: null,   // [{id,name,type,difficulty,rationale,accepted}] | null
   suggestingTopics: false,
+  // Suggested recruiter-screening questions (transient click-to-add pop-up).
+  screeningSuggestions: null,  // string[] | null
+  suggestingScreening: false,
   editingSuggId: null,
 };
 
@@ -577,18 +580,58 @@ function flagRow(qid, idx, f) {
 
 function screeningCanvas(job) {
   const sb = screeningOf(job);
-  if (!sb.questions.length) return emptyState('No screening questions yet', 'Generate a short recruiter gate — background, motivation, and logistics like notice period and compensation.');
-  return `
+  const panel = (studioUi.suggestingScreening || studioUi.screeningSuggestions) ? screeningSuggestPanel() : '';
+  const head = `
     <div class="bs-canvas-head">
-      <div><div class="bs-canvas-title">Recruiter screening</div><div class="bs-canvas-sub">${sb.questions.length} questions · short, warm, voice-friendly</div></div>
-      <button class="bs-mini-btn" data-action="add-screening"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Question</button>
-    </div>
-    ${sb.questions.map((q, i) => `
+      <div><div class="bs-canvas-title">Recruiter screening</div><div class="bs-canvas-sub">${sb.questions.length ? `${sb.questions.length} questions · short, warm, voice-friendly` : 'A short recruiter gate — background, motivation, and logistics.'}</div></div>
+      <div class="bs-canvas-actions">
+        <button class="bs-mini-btn primary" data-action="suggest-screening" ${studioUi.suggestingScreening ? 'disabled' : ''}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg> Suggest</button>
+        <button class="bs-mini-btn" data-action="add-screening"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Question</button>
+      </div>
+    </div>`;
+  const rows = sb.questions.length
+    ? sb.questions.map((q, i) => `
       <div class="bs-screen-row">
         <span class="bs-q-num">${i + 1}</span>
         <textarea class="bs-input" data-action="edit" data-q-id="${q.id}" data-field="prompt" rows="1" placeholder="Ask something short…">${escapeHTML(q.prompt)}</textarea>
         <button class="bs-icon-btn danger" data-action="delete-question" data-q-id="${q.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
-      </div>`).join('')}`;
+      </div>`).join('')
+    : emptyState('No screening questions yet', 'Hit Suggest for a few role-tuned questions, or add your own.');
+  return `${head}${panel}${rows}`;
+}
+
+// Pop-up of suggested recruiter-screening questions — click one to add it.
+function screeningSuggestPanel() {
+  if (studioUi.suggestingScreening) {
+    return `<div class="bs-suggest bs-reveal">
+      <div class="bs-suggest-head"><div>
+        <div class="bs-suggest-title">Thinking of good screening questions…</div>
+        <div class="bs-suggest-sub">Short, warm, voice-friendly questions tuned to this role.</div>
+      </div></div>
+      <div class="bs-sugg-skel"><div class="bs-shimmer"></div></div>
+      <div class="bs-sugg-skel"><div class="bs-shimmer"></div></div>
+    </div>`;
+  }
+  const list = studioUi.screeningSuggestions || [];
+  if (!list.length) return '';
+  return `<div class="bs-suggest bs-reveal">
+    <div class="bs-suggest-head">
+      <div>
+        <div class="bs-suggest-title">Suggested screening questions</div>
+        <div class="bs-suggest-sub">Click one to add it — tweak the wording after.</div>
+      </div>
+      <button class="bs-icon-btn" data-action="dismiss-screening-suggest" title="Dismiss"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    ${list.map((p, i) => `
+      <button class="bs-sugg-item on bs-sugg-pick" data-action="add-screening-suggestion" data-idx="${i}">
+        <span class="bs-sugg-plus"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+        <span class="bs-sugg-body"><span class="bs-sugg-name">${escapeHTML(p)}</span></span>
+      </button>`).join('')}
+    <div class="bs-suggest-foot">
+      <span class="bs-suggest-count"><b>${list.length}</b> suggestion${list.length !== 1 ? 's' : ''}</span>
+      <button class="bs-mini-btn ghost" data-action="suggest-screening"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Re-suggest</button>
+    </div>
+  </div>`;
 }
 
 function emptyState(title, desc) {
@@ -777,6 +820,25 @@ function bindStudio(pane, job) {
         const nq = createQuestionBlueprint({ questionType: 'hr_screening', difficulty: 'Easy' });
         screeningOf(job).questions.push(nq); persist(); reRender(); break;
       }
+      case 'suggest-screening':
+        await handleSuggestScreening(job, reRender); break;
+      case 'add-screening-suggestion': {
+        const list = studioUi.screeningSuggestions || [];
+        const idx = Number(el.dataset.idx);
+        const prompt = list[idx];
+        if (prompt) {
+          const sb = screeningOf(job);
+          // Fill the first empty question if there is one, else append a new one.
+          const empty = sb.questions.find((q) => !String(q.prompt || '').trim());
+          if (empty) empty.prompt = prompt;
+          else sb.questions.push(createQuestionBlueprint({ questionType: 'hr_screening', difficulty: 'Easy', prompt }));
+          studioUi.screeningSuggestions = list.filter((_, i) => i !== idx);
+          persist(); reRender(); soundEngine.playClick();
+        }
+        break;
+      }
+      case 'dismiss-screening-suggest':
+        studioUi.screeningSuggestions = null; studioUi.suggestingScreening = false; reRender(); break;
       case 'delete-question': deleteQuestion(job, qid); persist(); reRender(); break;
       case 'add-point': { const { q } = findQuestion(job, qid); const pts = pointsOf(q, el.dataset.kind); if (pts) { q.edited = true; pts.push(createRubricPoint('', el.dataset.kind === 'required' ? 2 : 1)); persist(); reRender(); } break; }
       case 'remove-point': { const { q } = findQuestion(job, qid); const pts = pointsOf(q, el.dataset.kind); if (pts) { q.edited = true; pts.splice(Number(el.dataset.idx), 1); persist(); reRender(); } break; }
@@ -829,8 +891,11 @@ function bindStudio(pane, job) {
     persist();
   };
 
-  // questionType/difficulty/severity are <select> — re-render so chips/tints update.
+  // Changing difficulty regenerates the question to that level (same competency);
+  // questionType/severity just re-render so chips/tints update.
   pane.onchange = (e) => {
+    const diff = e.target.closest('[data-action="edit"][data-field="difficulty"]');
+    if (diff) { handleDifficultyRegen(job, diff.dataset.qId, reRender, diff.value); return; }
     const el = e.target.closest('.bs-select, .bs-sev-select');
     if (el) reRender();
   };
@@ -948,6 +1013,44 @@ async function handleScenarioVariant(job, qid, reRender) {
   soundEngine.playChime([523.25, 659.25, 783.99], 0.18, 0.07);
 }
 
+// Regenerate a question to match a newly picked difficulty — same competency,
+// recalibrated prompt + rubric. Fires when the difficulty <select> changes.
+// AI-first, local fallback. Keeps the question's id + position.
+async function handleDifficultyRegen(job, qid, reRender, target) {
+  const { q } = findQuestion(job, qid);
+  if (!q || studioUi.generating) return;
+  studioUi.generating = true;
+  studioUi.scenarioQid = qid;
+  studioUi.genLabel = `Retuning to ${target}…`;
+  studioUi.expandedQuestionId = qid;
+  reRender();
+  soundEngine.playChime([392, 440], 0.1, 0.1);
+
+  let v;
+  let offline = false;
+  try { v = await generateDifficultyVariant(job, q, target); }
+  catch { v = localDifficultyVariant(q, target); offline = true; }
+
+  q.prompt = v.prompt;
+  q.questionType = v.questionType;
+  q.difficulty = v.difficulty;
+  q.estimatedMinutes = v.estimatedMinutes;
+  q.competency = v.competency;
+  q.modelAnswer = v.modelAnswer;
+  q.rubric = v.rubric;
+  q.followUpIntent = v.followUpIntent;
+  q.edited = true;
+
+  studioUi.generating = false;
+  studioUi.scenarioQid = null;
+  studioUi.genLabel = null;
+  studioUi.expandedQuestionId = q.id;
+  persist();
+  reRender();
+  showPremiumToast(offline ? `Retuned to ${q.difficulty} offline.` : `Retuned the question to ${q.difficulty}.`, 'success');
+  soundEngine.playChime([523.25, 659.25, 783.99], 0.18, 0.07);
+}
+
 const GAP_TOPIC_NAME = 'Coverage gaps';
 
 // Draft a single question that closes one uncovered/thin must-have, append it to
@@ -1013,6 +1116,31 @@ async function handleSuggestTopics(job, reRender) {
   studioUi.topicSuggestions = list;
   reRender();
   showPremiumToast(offline ? 'Suggested topics offline — keep the ones worth probing.' : 'Topics suggested — keep the ones worth probing.', 'success');
+  soundEngine.playChime([523.25, 659.25, 783.99], 0.18, 0.07);
+}
+
+// Suggest a fresh set of recruiter-screening questions (AI-first, local fallback),
+// minus any already on the list, into a click-to-add pop-up.
+async function handleSuggestScreening(job, reRender) {
+  if (studioUi.suggestingScreening) return;
+  studioUi.suggestingScreening = true;
+  studioUi.screeningSuggestions = null;
+  reRender();
+  soundEngine.playChime([392, 440], 0.1, 0.1);
+
+  let sb, offline = false;
+  try { sb = await generateScreeningQuestions(job); if (!sb.questions.length) throw new Error('empty'); }
+  catch { sb = localScreeningQuestions(job); offline = true; }
+
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const have = new Set(screeningOf(job).questions.map((q) => norm(q.prompt)));
+  const list = sb.questions.map((q) => String(q.prompt || '').trim()).filter((p) => p && !have.has(norm(p)));
+
+  studioUi.suggestingScreening = false;
+  studioUi.screeningSuggestions = list;
+  reRender();
+  if (!list.length) { showPremiumToast('No new suggestions — you already cover the basics.', 'success'); return; }
+  showPremiumToast(offline ? 'Suggested screening questions offline — click to add.' : 'Suggested screening questions — click to add.', 'success');
   soundEngine.playChime([523.25, 659.25, 783.99], 0.18, 0.07);
 }
 

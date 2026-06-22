@@ -270,6 +270,12 @@ body.light-theme .bs-dim-track { background: rgba(0,0,0,.06); }
 @keyframes bs-shimmer { to { transform: translateX(100%); } }
 .bs-suggest { animation: bs-reveal .3s var(--ease, cubic-bezier(0.16, 1, 0.3, 1)); }
 
+/* Screening suggestion pop-up — clickable rows */
+.bs-canvas-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.bs-sugg-pick { width: 100%; text-align: left; cursor: pointer; align-items: center; font-family: var(--font-body); color: var(--color-text); }
+.bs-sugg-pick:hover { border-color: var(--glass-border-gold); background: var(--color-gold-dim); }
+.bs-sugg-plus { flex-shrink: 0; width: 22px; height: 22px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; background: var(--color-gold); color: #06201d; }
+
 /* ── Run of Show document ── */
 .bs-runsheet { position: relative; }
 .bs-rs-mast { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 18px; margin-bottom: 6px; border-bottom: 1px solid var(--glass-border); flex-wrap: wrap; }
