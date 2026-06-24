@@ -194,7 +194,7 @@ async function autoFill(job) {
 async function loadSources() {
   try {
     const d = await request('/talent-finder/sources');
-    const def = ['internal_db', 'resume_db', 'manual_import', 'uploaded_csv', 'github', 'web_search'];
+    const def = ['internal_db', 'resume_db', 'manual_import', 'uploaded_csv', 'github', 'hackernews', 'web_search'];
     window._tfSources = d.sources || [];
     $('tf-sources').innerHTML = window._tfSources.map((s) => `
       <div class="tf-src">

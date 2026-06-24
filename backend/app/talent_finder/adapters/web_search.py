@@ -8,6 +8,11 @@ Multi-provider, auto-selected from env (first configured wins):
   • searxng    — your own self-hosted SearXNG metasearch. FREE, unlimited, no
       account. Needs SEARXNG_URL (e.g. http://localhost:8080). JSON format on.
   • brave      — Brave Search API (paid/free-tier). Needs BRAVE_API_KEY.
+  • duckduckgo — KEYLESS built-in fallback (no account, no env). Always available,
+      so Talent Finder finds real candidates out of the box even with no provider
+      configured (this is the default in production where the local SearXNG isn't
+      reachable). Uses DuckDuckGo's public HTML/Lite results endpoints. Set
+      TALENT_DISABLE_DDG=1 to turn this fallback off.
 
 COMPLIANCE: returns only PUBLIC, already-indexed result snippets + links — the
 same thing a recruiter sees searching. It does NOT fetch/scrape the linked pages
@@ -218,13 +223,17 @@ class WebSearchAdapter:
             return ("searxng", {"url": self._env("SEARXNG_URL").rstrip("/")})
         if self._env("BRAVE_API_KEY"):
             return ("brave", {"key": self._env("BRAVE_API_KEY")})
+        # Keyless built-in fallback so sourcing works everywhere with zero setup.
+        if not self._env("TALENT_DISABLE_DDG"):
+            return ("duckduckgo", {})
         return (None, {})
 
     def validate_permissions(self) -> Tuple[bool, str]:
         if not self.provider:
-            return (False, "Web Search needs a free provider: set GOOGLE_CSE_KEY+GOOGLE_CSE_ID "
-                           "(free 100/day), or SEARXNG_URL (self-hosted, free), or BRAVE_API_KEY. "
-                           "Public search results only — no scraping.")
+            return (False, "Web Search is turned off (TALENT_DISABLE_DDG set and no other provider). "
+                           "Set GOOGLE_CSE_KEY+GOOGLE_CSE_ID (free 100/day), SEARXNG_URL (self-hosted), "
+                           "or BRAVE_API_KEY, or unset TALENT_DISABLE_DDG to use the free DuckDuckGo fallback. "
+                           "Public search results only — no login-walled scraping.")
         return (True, "ok")
 
     # ── query planning ────────────────────────────────────────────────────────
@@ -250,28 +259,36 @@ class WebSearchAdapter:
     def _plan_queries(self, brief: Dict[str, Any]) -> List[str]:
         title = str(brief.get("title") or "").strip()
         title_q = f'"{title}"' if title else "developer"
-        skills = self._skills_str(brief)
         student = self._student_clause(brief)
+        # DuckDuckGo (the keyless default) returns NOTHING for long, over-constrained
+        # queries, so keep DDG queries lean — role + location + site filter, at most
+        # one skill. Skill matching still happens later in fit-scoring, so recall is
+        # what matters here. API providers (Google/Brave/SearXNG) get the richer form.
+        ddg = (self.provider == "duckduckgo")
+        skills = self._skills_str(brief, 1 if ddg else 3)
         queries: List[str] = []
         for loc in self._locations(brief):
             loc_q = f'"{loc}"' if loc else ""
-            # LinkedIn member profiles — the densest source of real people for any role
-            queries.append(" ".join(filter(None, [title_q, skills, loc_q, student, "site:linkedin.com/in"])))
-            # GitHub user profiles (devs); harmless for non-dev roles (just returns few)
-            if skills:
-                queries.append(" ".join(filter(None, [skills, loc_q, student, "site:github.com"])))
+            # LinkedIn member profiles — the densest source of real people for any role.
+            queries.append(" ".join(filter(None, [title_q, ("" if ddg else skills), loc_q, student, "site:linkedin.com/in"])))
+            # GitHub user profiles (devs); pair the strongest skill (or role) with location.
+            queries.append(" ".join(filter(None, [(skills or title_q), loc_q, student, "site:github.com"])))
             # portfolio / personal sites
-            queries.append(" ".join(filter(None, [title_q, skills, loc_q, student,
-                                                  '(portfolio OR "about me" OR site:about.me OR site:read.cv)',
-                                                  self._NOISE])))
+            if ddg:
+                queries.append(" ".join(filter(None, [title_q, loc_q, student, '(portfolio OR "about me")'])))
+            else:
+                queries.append(" ".join(filter(None, [title_q, skills, loc_q, student,
+                                                      '(portfolio OR "about me" OR site:about.me OR site:read.cv)',
+                                                      self._NOISE])))
         # de-dup identical queries, cap the fan-out to stay within rate limits
+        # (DDG is more aggressively rate-limited, so fan out less).
         seen, out = set(), []
         for q in queries:
             q = re.sub(r"\s+", " ", q).strip()
             if q and q not in seen:
                 seen.add(q)
                 out.append(q)
-        return out[:6]
+        return out[: (4 if ddg else 6)]
 
     # ── provider call ─────────────────────────────────────────────────────────
     def _raw_results(self, q: str) -> List[Dict[str, str]]:
@@ -298,9 +315,78 @@ class WebSearchAdapter:
                 r.raise_for_status()
                 return [{"title": i.get("title", ""), "url": i.get("url", ""), "description": i.get("description", "")}
                         for i in (((r.json() or {}).get("web") or {}).get("results") or [])]
+            if self.provider == "duckduckgo":
+                return self._ddg_results(q)
         except Exception:
             return []
         return []
+
+    # ── DuckDuckGo keyless results (public HTML / Lite endpoints) ───────────────
+    _DDG_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+    def _ddg_clean_url(self, href: str) -> Optional[str]:
+        """Resolve a DDG result href (often a /l/?uddg= redirect) to the real URL."""
+        from urllib.parse import unquote, parse_qs
+        if not href:
+            return None
+        if href.startswith("//"):
+            href = "https:" + href
+        if "duckduckgo.com/l/" in href:
+            try:
+                qs = parse_qs(urlparse(href).query)
+                if qs.get("uddg"):
+                    return unquote(qs["uddg"][0])
+            except Exception:
+                return None
+        return href if href.startswith("http") else None
+
+    def _ddg_results(self, q: str) -> List[Dict[str, str]]:
+        import html as _html
+        import time
+        headers = {"User-Agent": self._DDG_UA, "Accept-Language": "en-US,en;q=0.9"}
+        html_text = ""
+        # html endpoint is richer (has snippets); lite is a resilient fallback. DDG
+        # rate-limits/returns empty under automation, so retry once with a backoff.
+        endpoints = ("https://html.duckduckgo.com/html/", "https://lite.duckduckgo.com/lite/")
+        for attempt in range(2):
+            for endpoint in endpoints:
+                try:
+                    resp = requests.post(endpoint, data={"q": q, "kl": "us-en"}, headers=headers, timeout=15)
+                    resp.raise_for_status()
+                    if resp.text and ("result__a" in resp.text or "result-link" in resp.text):
+                        html_text = resp.text
+                        break
+                except Exception:
+                    continue
+            if html_text:
+                break
+            time.sleep(1.5)  # backoff before the retry pass
+        if not html_text:
+            return []
+        out: List[Dict[str, str]] = []
+        # html.duckduckgo.com markup: <a class="result__a" href="...">title</a>
+        for m in re.finditer(r'<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
+                             html_text, re.I | re.S):
+            url = self._ddg_clean_url(_html.unescape(m.group(1)))
+            title = _html.unescape(re.sub(r"<[^>]+>", "", m.group(2))).strip()
+            if url and title:
+                out.append({"title": title, "url": url, "description": ""})
+        # lite.duckduckgo.com markup: <a class="result-link" href="...">title</a>
+        if not out:
+            for m in re.finditer(r'<a[^>]+class="result-link"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
+                                 html_text, re.I | re.S):
+                url = self._ddg_clean_url(_html.unescape(m.group(1)))
+                title = _html.unescape(re.sub(r"<[^>]+>", "", m.group(2))).strip()
+                if url and title:
+                    out.append({"title": title, "url": url, "description": ""})
+        # attach snippets in result order (best-effort)
+        snippets = [_html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
+                    for s in re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', html_text, re.I | re.S)]
+        for i, o in enumerate(out):
+            if i < len(snippets):
+                o["description"] = snippets[i]
+        return out[:25]
 
     # ── result → candidate ────────────────────────────────────────────────────
     def _to_candidate(self, res: Dict[str, str], loc_hint: Optional[str], brief: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -351,7 +437,11 @@ class WebSearchAdapter:
         seen_urls: set = set()
         # map each query back to a loc hint: queries are emitted per-loc in groups,
         # so recompute the hint from the query text where possible.
-        for q in queries:
+        import time
+        for qi, q in enumerate(queries):
+            # Pace DuckDuckGo requests so we don't trip its rate limiter mid-search.
+            if self.provider == "duckduckgo" and qi > 0:
+                time.sleep(1.2)
             loc_hint = next((l for l in locs if l and f'"{l}"' in q), brief.get("location"))
             for res in self._raw_results(q):
                 u = (res.get("url") or "").rstrip("/").lower()

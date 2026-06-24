@@ -100,7 +100,8 @@ def _selected_sources(body: Dict[str, Any]) -> List[str]:
     if body.get("includeUploadedFiles"):
         s += ["uploaded_csv", "manual_import"]
     if body.get("includePublicWeb"):
-        s.append("public_web")
+        # The keyless real-candidate web sources (all work without LinkedIn/Naukri).
+        s += ["github", "hackernews", "web_search", "public_web"]
     if body.get("includeApprovedAPIs"):
         s.append("approved_api")
     return s or ["internal_db", "resume_db"]
