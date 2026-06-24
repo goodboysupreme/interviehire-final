@@ -5,9 +5,9 @@
 
 import { document } from './runtime.js';
 import { AppState } from './state.js';
-import { renderJobCards, updateJobsCounters, updateSummaryMetrics } from './render-views.js';
+import { renderJobCards, renderTeamTable, updateJobsCounters, updateSummaryMetrics } from './render-views.js';
 import { showPremiumToast } from './sourcing.js';
-import { isApiMode, apiLogin, apiFetchJobs } from './api.js';
+import { isApiMode, apiLogin, apiFetchJobs, apiListTeam } from './api.js';
 
 export async function bootstrapApiData() {
   if (!isApiMode()) return;
@@ -17,6 +17,19 @@ export async function bootstrapApiData() {
     const msg = (e && e.message) || '';
     if (/401|not authenticated|unauthor|credential/i.test(msg)) showLoginOverlay();
     else showPremiumToast(`Live backend unreachable: ${msg}`, 'error');
+  }
+  // Team is non-critical to the jobs view — hydrate it best-effort so a failure
+  // here never blocks the dashboard or triggers the login overlay twice.
+  try {
+    await hydrateTeam();
+  } catch { /* keep the localStorage-restored team */ }
+}
+
+async function hydrateTeam() {
+  const members = await apiListTeam();
+  if (Array.isArray(members) && members.length > 0) {
+    AppState.team = members;
+    try { renderTeamTable(); } catch {}
   }
 }
 

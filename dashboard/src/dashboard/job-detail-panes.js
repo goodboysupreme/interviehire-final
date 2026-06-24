@@ -36,7 +36,11 @@ function renderJobDetailPanes(job) {
   // 1. Resume pane — criteria config + candidates table
   const resumeList = document.getElementById('list-stage-resume');
   if (resumeList) {
-    const resumeCands = jobCandidates.filter(c => c.status === 'Resume');
+    // Show every active candidate on the Resume Analysis page, not only Resume-stage
+    // ones: schedule-mode and advanced candidates (Screening/Functional/Hired) stay
+    // visible here with their report intact — only Rejected drops off. The per-row
+    // Advance button is gated separately (rendered only when status === 'Resume').
+    const resumeCands = jobCandidates.filter(c => c.status !== 'Rejected');
     const criteria = job.resumeCriteria || { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 1 };
     const addApplicantsHTML = buildAddApplicantsPanel('resume', resumeCands.length);
 
@@ -554,7 +558,23 @@ function renderJobDetailPanes(job) {
           }
           if (action === 'advance') {
             const stages = ['Resume', 'Screening', 'Functional', 'Hired'];
-            ids.forEach(cid => {
+            // On the Resume Analysis table only genuine Resume-stage rows may be
+            // advanced. Candidates already in Screening/Functional/Hired now also
+            // render here (table shows all-except-Rejected), so bulk-advance must
+            // skip them rather than over-advance. Other panes keep generic progression.
+            let advanceIds = ids;
+            if (isResumeStage) {
+              advanceIds = ids.filter(cid => {
+                const c = AppState.candidates.find(x => x.id === cid);
+                return c && c.status === 'Resume';
+              });
+              const skipped = ids.length - advanceIds.length;
+              if (skipped > 0) {
+                showPremiumToast(`${skipped} candidate(s) already past Resume Analysis were skipped.`, 'info');
+              }
+              if (advanceIds.length === 0) { dd.remove(); return; }
+            }
+            advanceIds.forEach(cid => {
               const cand = AppState.candidates.find(c => c.id === cid);
               if (cand) {
                 const idx = stages.indexOf(cand.status);
@@ -579,7 +599,7 @@ function renderJobDetailPanes(job) {
             });
             saveStateToLocalStorage();
             refreshAfterStageChange();
-            showPremiumToast(`Advanced ${ids.length} candidate(s) to next stage.`, 'success');
+            showPremiumToast(`Advanced ${advanceIds.length} candidate(s) to next stage.`, 'success');
           } else if (action === 'reject') {
             ids.forEach(cid => {
               const cand = AppState.candidates.find(c => c.id === cid);

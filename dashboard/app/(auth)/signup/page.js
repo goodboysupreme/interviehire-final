@@ -40,12 +40,12 @@ export default function SignupPage() {
     setError('');
     setLoading(true);
     try {
-      await apiSignup({
+      const { onboardingRequired } = await apiSignup({
         name: form.name.trim(),
         email: form.email.trim(),
         password: form.password,
       });
-      router.replace('/dashboard');
+      router.replace(onboardingRequired ? '/onboarding' : '/dashboard');
     } catch (err) {
       setError((err && err.message) || 'Could not create your account.');
       setLoading(false);

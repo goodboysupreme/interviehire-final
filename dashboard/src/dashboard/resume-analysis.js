@@ -219,7 +219,7 @@ function renderResumeStagePaneForJob(candidates, job, container) {
                   <td>
                     <div class="ra-action-btns">
                       <button class="btn-stage-reject" data-candidate-id="${c.id}">Reject</button>
-                      <button class="btn-stage-advance" data-candidate-id="${c.id}" data-next-stage="Screening">Advance</button>
+                      ${c.status === 'Resume' ? `<button class="btn-stage-advance" data-candidate-id="${c.id}" data-next-stage="Screening">Advance</button>` : ''}
                     </div>
                   </td>
                 </tr>

@@ -13,6 +13,7 @@ import { AppState, generateJobId } from './state.js';
 function saveStateToLocalStorage() {
   localStorage.setItem('IntervieHire_jobs_state', JSON.stringify(AppState.jobs));
   localStorage.setItem('IntervieHire_candidates_state', JSON.stringify(AppState.candidates));
+  localStorage.setItem('IntervieHire_team_state', JSON.stringify(AppState.team));
 }
 
 function loadStateFromLocalStorage() {
@@ -133,6 +134,19 @@ function loadStateFromLocalStorage() {
     }
   } catch (e) {
     console.error("Error loading candidates from localStorage", e);
+  }
+
+  // Restore team members from the last session. In API mode hydrateTeam() later
+  // overwrites this with the authoritative backend list; this restore keeps the
+  // team visible on refresh while that fetch is in flight (and in local mode).
+  try {
+    const savedTeam = localStorage.getItem('IntervieHire_team_state');
+    if (savedTeam) {
+      const parsed = JSON.parse(savedTeam);
+      if (Array.isArray(parsed) && parsed.length > 0) AppState.team = parsed;
+    }
+  } catch (e) {
+    console.error("Error loading team from localStorage", e);
   }
 }
 

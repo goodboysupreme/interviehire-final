@@ -8,11 +8,11 @@
 // see memory: prefer-vansh-version).
 
 import { createTopic, createQuestionBlueprint, toFunctionalParameters, toScreeningQuestions } from './blueprint-engine.js';
-import { request, API_BASE, apiLogin, apiSignup, apiMe, apiLogout, isAuthed, clearAuthed } from '../auth-client.js';
+import { request, API_BASE, apiLogin, apiSignup, apiMe, apiLogout, isAuthed, clearAuthed, apiOnboarding, apiListOrganisations, apiSwitchContext } from '../auth-client.js';
 
 // Auth + HTTP primitives live in ../auth-client.js (dependency-free so the lean
 // /login + /signup pages can reuse them). Re-export for existing callers here.
-export { apiLogin, apiSignup, apiMe, apiLogout, isAuthed, clearAuthed };
+export { apiLogin, apiSignup, apiMe, apiLogout, isAuthed, clearAuthed, apiOnboarding, apiListOrganisations, apiSwitchContext };
 
 const LS_SOURCE = 'IntervieHire_data_source';
 
@@ -120,13 +120,17 @@ export async function ensureBackendApplicantId(c2, jobId) {
   return created.id;
 }
 
-export async function apiAddApplicant(jobId, { name, email, phone } = {}) {
+export async function apiAddApplicant(jobId, { name, email, phone, source } = {}) {
   const data = await request(`/jobs/${jobId}/applicants`, {
     method: 'POST',
     body: {
       name: name || 'Candidate',
       email,
       phone: phone || null,
+      // Optional. 'scheduled' → backend sets screening_status=pending (lands in
+      // Recruiter Screening); 'functional' → functional_status=pending; omitted
+      // → Resume Analysis only. Sent only when provided so existing callers are unaffected.
+      ...(source ? { source } : {}),
     },
   });
   return mapApplicantOutToCandidate(data);
@@ -184,6 +188,90 @@ export async function apiUploadResumes(jobId, files, source = null) {
     throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
   }
   return Array.isArray(data) ? data.map(mapApplicantOutToCandidate) : [];
+}
+
+// ── Team ───────────────────────────────────────────────────────────────────
+// The recruiter's organisation members. Backed by /api/team — invite creates a
+// real User row (so the invitee can log in), list/patch/delete keep the team
+// table in sync with the shared DB instead of living only in localStorage.
+export async function apiListTeam() {
+  const data = await request('/team');
+  const list = Array.isArray(data?.members) ? data.members : (Array.isArray(data) ? data : []);
+  return list.map(mapMemberOutToTeam);
+}
+export async function apiInviteMember({ name, email, designation, usertype } = {}) {
+  const data = await request('/team/invite', {
+    method: 'POST',
+    body: {
+      name: name || 'Member',
+      email,
+      designation: designation || null,
+      user_type: mapUsertypeOut(usertype),
+    },
+  });
+  return mapMemberOutToTeam(data);
+}
+// Persist an inline role/status edit. Pass dashboard-facing keys (usertype /
+// status / designation); only the ones provided are sent to the backend.
+export async function apiUpdateMember(userId, { usertype, status, designation } = {}) {
+  const body = {};
+  if (usertype !== undefined) body.user_type = mapUsertypeOut(usertype);
+  if (status !== undefined) body.status = String(status).toLowerCase();
+  if (designation !== undefined) body.designation = designation;
+  return mapMemberOutToTeam(await request(`/team/${userId}`, { method: 'PATCH', body }));
+}
+export async function apiRemoveMember(userId) {
+  return request(`/team/${userId}`, { method: 'DELETE' });
+}
+
+// ── Usage / Analytics ───────────────────────────────────────────────────────
+// Backs the Usage Overview page (view-analytics). These hit the org-scoped
+// /api/usage/* endpoints — the active_org_id cookie rides along with request(),
+// so the data is always the *active* organisation's, never a cross-org aggregate.
+
+// Headline funnel stats for the active org. start/end are optional Date bounds
+// (from getDateRangeBounds()); when present they're sent as date_from/date_to so
+// the cards reflect the chosen range. Returns the raw UsageStatsOut (snake_case)
+// — applyUsageStats() reads those fields directly, no mapping needed.
+export async function apiFetchUsageStats(start, end) {
+  const qs = new URLSearchParams();
+  if (start) qs.set('date_from', start.toISOString());
+  if (end) qs.set('date_to', end.toISOString());
+  const q = qs.toString();
+  return request(`/usage/stats${q ? `?${q}` : ''}`);
+}
+
+// Every applicant across the active org's visible jobs, mapped to the dashboard
+// candidate shape. Usage rows carry job_id/created_at/match_score but no role
+// title, so we fill the table-specific fields the shared mapper omits: jobId
+// (per-job filtering + role join), registeredOn (the date column + date filter),
+// and score (the "Match Score" column). jobApplied is joined from AppState.jobs
+// by the caller (hydrateUsageAnalytics) since the row has no role name.
+export async function apiFetchUsageCandidates() {
+  const rows = await request('/usage/candidates-table');
+  return arr(rows).map((r) => {
+    const c = mapApplicantOutToCandidate(r);
+    c.jobId = r.job_id || null;
+    c.registeredOn = fmtRegisteredOn(r.created_at);
+    c.score = r.match_score ?? '—';
+    return c;
+  });
+}
+
+// ISO timestamp → the same human string the demo candidates use
+// ('04 Mar 2026, 10:15 AM') so parseFuzzyDate()/the date filter keep working and
+// the column matches local mode exactly.
+function fmtRegisteredOn(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const day = String(d.getDate()).padStart(2, '0');
+  let h = d.getHours();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${day} ${MON[d.getMonth()]} ${d.getFullYear()}, ${String(h).padStart(2, '0')}:${min} ${ampm}`;
 }
 
 
@@ -354,6 +442,37 @@ function mapApplicantOutToCandidate(a = {}) {
     ...(() => { try { const p = a.resume_analysis_report ? JSON.parse(a.resume_analysis_report) : null; return p ? { resumeAnalysis: p } : {}; } catch { return {}; } })(),
     _backend: true,
   };
+}
+
+// Backend user (UserOut) → dashboard team member. The backend's user_type
+// (super_admin|org_admin|member) is coarser than the UI's role label, so member
+// defaults to "Recruiter"; backendId carries the UUID needed for PATCH/DELETE.
+function mapMemberOutToTeam(u = {}) {
+  const ut = String(u.user_type || '').toLowerCase();
+  const usertype = (ut === 'org_admin' || ut === 'super_admin') ? 'Org. Admin' : 'Recruiter';
+  const st = String(u.status || 'active').toLowerCase();
+  const status = st.charAt(0).toUpperCase() + st.slice(1);
+  let registeredOn = '';
+  if (u.registered_on) {
+    try {
+      registeredOn = new Date(u.registered_on).toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+    } catch { registeredOn = ''; }
+  }
+  return {
+    backendId: u.id,
+    name: u.name || '',
+    email: u.email || '',
+    designation: u.designation || '',
+    usertype,
+    registeredOn,
+    status,
+    _backend: true,
+  };
+}
+// Dashboard role label → backend user_type enum. Only "Org. Admin" maps to an
+// admin; Recruiter/Interviewer both map to "member" (the backend has no finer role).
+function mapUsertypeOut(usertype) {
+  return usertype === 'Org. Admin' ? 'org_admin' : 'member';
 }
 
 // Backend functional-report → canonical CandidateReport. The engine's stored

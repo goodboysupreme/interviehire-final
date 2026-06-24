@@ -60,6 +60,18 @@ def seed():
         )
         db.add(super_admin)
 
+        print("Seeding dedicated Superadmin user...")
+        superadmin = User(
+            name="Superadmin",
+            email="superadmin@interviehire.com",
+            designation="Superadmin",
+            user_type=UserType.super_admin,
+            status=UserStatus.active,
+            hashed_password=get_password_hash("superadminpass"),
+            organisation_id=None
+        )
+        db.add(superadmin)
+
         print("Seeding devasri-tech users...")
         # Org Admin
         admin1 = User(

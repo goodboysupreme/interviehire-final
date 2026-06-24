@@ -58,3 +58,17 @@ export async function apiLogout() {
   try { await request('/auth/logout', { method: 'POST' }); } catch {}
   setAuthed(false);
 }
+
+// ── Onboarding + super-admin org context ───────────────────────────────────
+// New signups land org-less (onboarding_required); this creates their workspace.
+export async function apiOnboarding(payload) {
+  return request('/auth/onboarding', { method: 'POST', body: payload });
+}
+// Super-admin only (backend 403s everyone else): list every organisation.
+export async function apiListOrganisations() {
+  return request('/auth/organisations');
+}
+// Super-admin only: set the active_org_id cookie so list routes scope to `organisationId`.
+export async function apiSwitchContext(organisationId) {
+  return request('/auth/switch-context', { method: 'POST', body: { organisation_id: organisationId } });
+}

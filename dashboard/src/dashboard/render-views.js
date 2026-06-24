@@ -9,7 +9,8 @@ import { openCandidateReport } from './report.js';
 import { soundEngine } from './sound.js';
 import { showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
-import { getDataSource } from './api.js';
+import { getDataSource, isApiMode, apiUpdateMember, apiRemoveMember, apiFetchUsageStats, apiFetchUsageCandidates } from './api.js';
+import { saveStateToLocalStorage } from './ai-api.js';
 
 // ==========================================
 // RENDERING & INTERACTIVE VIEWS
@@ -580,41 +581,72 @@ function renderTeamTable() {
 
   // Bind change/click events to inline dropdowns & buttons
   tbody.querySelectorAll('.team-usertype-select').forEach(sel => {
-    sel.addEventListener('change', (e) => {
+    sel.addEventListener('change', async (e) => {
       const email = sel.getAttribute('data-email');
       const member = AppState.team.find(m => m.email === email);
-      if (member) {
-        member.usertype = e.target.value;
-        soundEngine.playChime([523.25], 0.1);
-        showPremiumToast(`${member.name}'s role updated to ${member.usertype}.`, 'success');
-        renderTeamTable();
+      if (!member) return;
+      const prev = member.usertype;
+      const next = e.target.value;
+      // Persist to the shared DB first; revert the dropdown if the backend rejects.
+      if (isApiMode() && member.backendId) {
+        try {
+          await apiUpdateMember(member.backendId, { usertype: next });
+        } catch (err) {
+          sel.value = prev;
+          showPremiumToast(`Could not update ${member.name}'s role: ${(err && err.message) || 'backend error'}`, 'error');
+          return;
+        }
       }
+      member.usertype = next;
+      saveStateToLocalStorage();
+      soundEngine.playChime([523.25], 0.1);
+      showPremiumToast(`${member.name}'s role updated to ${member.usertype}.`, 'success');
+      renderTeamTable();
     });
   });
 
   tbody.querySelectorAll('.team-status-select').forEach(sel => {
-    sel.addEventListener('change', (e) => {
+    sel.addEventListener('change', async (e) => {
       const email = sel.getAttribute('data-email');
       const member = AppState.team.find(m => m.email === email);
-      if (member) {
-        member.status = e.target.value;
-        soundEngine.playChime([523.25], 0.1);
-        showPremiumToast(`${member.name}'s status updated to ${member.status}.`, 'success');
-        renderTeamTable();
+      if (!member) return;
+      const prev = member.status;
+      const next = e.target.value;
+      if (isApiMode() && member.backendId) {
+        try {
+          await apiUpdateMember(member.backendId, { status: next });
+        } catch (err) {
+          sel.value = prev;
+          showPremiumToast(`Could not update ${member.name}'s status: ${(err && err.message) || 'backend error'}`, 'error');
+          return;
+        }
       }
+      member.status = next;
+      saveStateToLocalStorage();
+      soundEngine.playChime([523.25], 0.1);
+      showPremiumToast(`${member.name}'s status updated to ${member.status}.`, 'success');
+      renderTeamTable();
     });
   });
 
   tbody.querySelectorAll('.btn-revoke-member').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const email = btn.getAttribute('data-email');
       const member = AppState.team.find(m => m.email === email);
-      if (member) {
-        AppState.team = AppState.team.filter(m => m.email !== email);
-        soundEngine.playChime([392, 293.66], 0.15, 0.08);
-        showPremiumToast(`${member.name} has been revoked from the team access list.`, 'success');
-        renderTeamTable();
+      if (!member) return;
+      if (isApiMode() && member.backendId) {
+        try {
+          await apiRemoveMember(member.backendId);
+        } catch (err) {
+          showPremiumToast(`Could not revoke ${member.name}: ${(err && err.message) || 'backend error'}`, 'error');
+          return;
+        }
       }
+      AppState.team = AppState.team.filter(m => m.email !== email);
+      saveStateToLocalStorage();
+      soundEngine.playChime([392, 293.66], 0.15, 0.08);
+      showPremiumToast(`${member.name} has been revoked from the team access list.`, 'success');
+      renderTeamTable();
     });
   });
 }
@@ -664,7 +696,10 @@ function applyDateRangeGlobally() {
     AppState.dateRange === '30d' ? 'Last 30 days' : 'Last 90 days';
 
   recalculateJobPipelines();
-  updateSummaryMetrics();
+  // API mode: cards are authoritative from the org-scoped backend; local mode
+  // derives them from AppState. The table re-renders from AppState.candidates
+  // (already the real set in API mode) and filters by date client-side.
+  if (isApiMode()) refreshUsageStats(); else updateSummaryMetrics();
   renderAnalyticsTable();
   renderJobCards();
 
@@ -752,4 +787,70 @@ function updateSummaryMetrics() {
 }
 
 
-export { applyDateRangeGlobally, filterCandidatesByDateRange, getDateRangeBounds, parseFuzzyDate, renderAnalyticsTable, renderJobCards, renderJobListView, renderTeamTable, updateJobsCounters, updateSummaryMetrics, updateTeamCounters };
+// ── API-mode Usage Overview ─────────────────────────────────────────────────
+// In API mode the four headline cards + funnel pills come straight from the
+// backend's org-scoped /usage/stats (authoritative funnel rules), and the
+// candidate table from /usage/candidates-table — NOT re-derived from the demo
+// AppState.candidates. updateSummaryMetrics() above stays the local-mode path.
+
+// Write a UsageStatsOut object into the four cards + their pills. Pure DOM; the
+// field→pill order matches the card markup in dashboard-crystal.js.
+function applyUsageStats(s) {
+  if (!s) return;
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v ?? 0; };
+  setText('stat-total-applicants', s.total_applicants);
+  setText('stat-resume-analysis', s.resume_analysed);
+  setText('stat-recruiter-screening', s.screening_attempted);
+  setText('stat-functional-interview', s.functional_attempted);
+
+  const setPills = (n, vals) => {
+    const pills = document.querySelectorAll(`.card-metric:nth-child(${n}) .m-pill .v`);
+    vals.forEach((v, i) => { if (pills[i]) pills[i].textContent = v ?? 0; });
+  };
+  setPills(1, [s.career_page, s.bulk_upload, s.scheduled, s.direct_link]);
+  setPills(2, [s.resume_analysed, s.resume_shortlisted, s.resume_waitlisted]);
+  setPills(3, [s.screening_attempted, s.screening_scheduled, s.screening_shortlisted, s.screening_waitlisted]);
+  setPills(4, [s.functional_attempted, s.functional_scheduled, s.functional_shortlisted, s.functional_waitlisted]);
+}
+
+// Re-pull just the stat cards for the current date range (used when only the
+// range changes — the candidate list is filtered client-side, so no refetch).
+async function refreshUsageStats() {
+  try {
+    const { start, end } = getDateRangeBounds();
+    applyUsageStats(await apiFetchUsageStats(start, end));
+  } catch (e) {
+    showPremiumToast(`Couldn't refresh usage stats: ${e.message || e}`, 'error');
+  }
+}
+
+// Single entry point for the Usage Overview page. API mode: fetch the org-scoped
+// stats + candidates together, join each candidate's role title from the already
+// org-hydrated AppState.jobs, replace AppState.candidates with the real set, then
+// paint the cards + table. Local/zero-key mode: the original local derivation.
+async function hydrateUsageAnalytics() {
+  if (!isApiMode()) {
+    updateSummaryMetrics();
+    renderAnalyticsTable();
+    return;
+  }
+  try {
+    const { start, end } = getDateRangeBounds();
+    const [stats, candidates] = await Promise.all([
+      apiFetchUsageStats(start, end),
+      apiFetchUsageCandidates(),
+    ]);
+    candidates.forEach((c) => {
+      const job = AppState.jobs.find((j) => j.id === c.jobId);
+      c.jobApplied = job ? (job.roleName || job.cardName || '') : (c.jobApplied || '');
+    });
+    AppState.candidates = candidates;
+    applyUsageStats(stats);
+    renderAnalyticsTable();
+  } catch (e) {
+    showPremiumToast(`Couldn't load usage data: ${e.message || e}`, 'error');
+  }
+}
+
+
+export { applyDateRangeGlobally, filterCandidatesByDateRange, getDateRangeBounds, hydrateUsageAnalytics, parseFuzzyDate, renderAnalyticsTable, renderJobCards, renderJobListView, renderTeamTable, updateJobsCounters, updateSummaryMetrics, updateTeamCounters };

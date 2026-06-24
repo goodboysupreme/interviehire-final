@@ -16,11 +16,11 @@ import { EXPERIENCE_BANDS_PROMPT } from './constants.js';
 import { callDeepSeekAPI, enrichJobWithAI, parseAIJson, saveStateToLocalStorage } from './ai-api.js';
 import { openJobFlowView, toggleHeaderElementsForJobFlow } from './job-flow.js';
 import { renderKanbanBoard, resetWaveformAudio, startSwarmLogs } from './kanban-swarm.js';
-import { renderAnalyticsTable, renderJobCards, renderTeamTable, updateSummaryMetrics } from './render-views.js';
+import { renderAnalyticsTable, renderJobCards, renderTeamTable, hydrateUsageAnalytics } from './render-views.js';
 import { soundEngine } from './sound.js';
 import { AppState, generateJobId } from './state.js';
 import { pushUrl } from './url-sync.js';
-import { isApiMode, apiFetchTeam, apiFetchUsageCandidates, apiFetchOrganisation, apiCreateJob, apiPatchJobParameters } from './api.js';
+import { isApiMode, apiCreateJob, apiPatchJobParameters } from './api.js';
 
 // ==========================================
 // VIEW SWITCHER ROUTING
@@ -93,8 +93,9 @@ function navigateToTab(tabId) {
     subText.textContent = 'Track applicants funnel metrics and pipelines';
     actionBtnText.textContent = 'New Job';
     document.getElementById('view-analytics').classList.add('active-view');
-    updateSummaryMetrics();
-    renderAnalyticsTable();
+    // API mode → fetch the active org's real usage data; local mode falls back
+    // to deriving the cards/table from AppState (handled inside the hydrator).
+    hydrateUsageAnalytics();
     soundEngine.playChime([261.63, 329.63, 392.00], 0.12, 0.12);
 
   } else if (tabId === 'swarm') {

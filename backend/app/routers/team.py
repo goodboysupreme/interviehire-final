@@ -5,7 +5,7 @@ from typing import Optional
 
 from app.database import get_db
 from app.models.user import User, UserStatus, UserType
-from app.schemas import TeamListOut, UserOut, InviteMemberIn
+from app.schemas import TeamListOut, UserOut, InviteMemberIn, UpdateMemberIn
 from app.utils.auth import get_current_user, get_active_org_id
 
 router = APIRouter()
@@ -62,6 +62,30 @@ def invite_member(
     db.commit()
     db.refresh(new_user)
     return new_user
+
+
+@router.patch("/{user_id}", response_model=UserOut)
+def update_member(
+    user_id: UUID,
+    data: UpdateMemberIn,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    org_id = active_org_id if current_user.user_type == UserType.super_admin else current_user.organisation_id
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Action not allowed")
+
+    user = db.query(User).filter(User.id == user_id, User.organisation_id == org_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found in your organisation")
+
+    fields = data.model_dump(exclude_unset=True)
+    for key, value in fields.items():
+        setattr(user, key, value)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 @router.delete("/{user_id}")

@@ -141,6 +141,16 @@ export const html = `
               <input type="text" id="global-search" placeholder="Search jobs, candidates..." />
             </div>
 
+            <!-- Organisation Switcher (super-admin only; revealed by JS) -->
+            <div class="org-switcher" id="org-switcher" style="display:none;">
+              <button class="btn-org-switcher" id="btn-org-switcher" aria-haspopup="true" aria-expanded="false" title="Switch organisation">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/><path d="M9 8h1"/><path d="M9 12h1"/><path d="M9 16h1"/><path d="M14 8h1"/><path d="M14 12h1"/><path d="M14 16h1"/></svg>
+                <span class="org-switcher-label" id="org-switcher-label">Organisation</span>
+                <svg class="org-switcher-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="bulk-actions-dropdown org-switcher-menu" id="org-switcher-menu" style="display:none;"></div>
+            </div>
+
             <!-- Theme Toggle Button -->
             <button class="btn-theme-toggle" id="btn-theme-toggle" aria-label="Toggle Theme">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="theme-icon-moon"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>

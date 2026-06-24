@@ -123,6 +123,9 @@ export default function DashboardShell({ children }) {
     apiMe()
       .then((me) => {
         if (cancelled) return;
+        // Org-less accounts (new signups) must finish onboarding before the
+        // dashboard — keeps every dashboard session scoped to a real org.
+        if (me && me.onboarding_required) { router.replace('/onboarding'); return; }
         setUser(me);
         setPhase('authed');
       })
@@ -162,6 +165,11 @@ export default function DashboardShell({ children }) {
     const firstName = label.split(/\s+/)[0] || label;
     window.IH_USER_NAME = firstName;
     window.IH_ORG_NAME = (user.organisation_name || '').trim();
+    window.IH_USER_TYPE = user.user_type || 'member';
+    window.IH_ACTIVE_ORG_ID = user.organisation_id || null;
+    // Globals are set — (re)build the super-admin org switcher now that the role
+    // is known. Guarded: the vanilla engine registers this once mount.js runs.
+    if (typeof window.__ihInitOrgSwitcher === 'function') window.__ihInitOrgSwitcher();
 
     // Personalise the "Created By" defaults so they show the signed-in user.
     const creatorInput = document.getElementById('job-creator-input');

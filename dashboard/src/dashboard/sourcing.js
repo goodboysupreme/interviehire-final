@@ -1168,7 +1168,12 @@ async function persistImportedCandidates(localIds, job) {
     const cand = AppState.candidates.find((c) => c.id === localId);
     if (!cand) continue;
     try {
-      const created = await apiAddApplicant(job.id, { name: cand.name, email: cand.email, phone: cand.phone });
+      // Schedule-mode candidates (local status 'Screening') persist with
+      // source='scheduled' so the backend sets screening_status=pending and they
+      // appear in Recruiter Screening too; analyse-mode (status 'Resume') sends no
+      // source and stays Resume-only. Still one applicant row either way.
+      const source = cand.status === 'Screening' ? 'scheduled' : null;
+      const created = await apiAddApplicant(job.id, { name: cand.name, email: cand.email, phone: cand.phone, source });
       if (!created || !created.id) throw new Error('no id returned');
       const uuid = created.id;
       if (resumeTextCache[localId] != null) { resumeTextCache[uuid] = resumeTextCache[localId]; delete resumeTextCache[localId]; }

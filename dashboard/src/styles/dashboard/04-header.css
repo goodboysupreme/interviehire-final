@@ -141,6 +141,44 @@
 body.light-theme .theme-icon-moon { display: none; }
 body.light-theme .theme-icon-sun { display: block; }
 
+/* ---- Organisation switcher (super-admin only) ---- */
+.org-switcher { position: relative; display: flex; align-items: center; }
+.btn-org-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  color: var(--color-text-primary);
+  padding: 9px 12px;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--spring-snappy);
+  max-width: 230px;
+}
+.btn-org-switcher:hover {
+  border-color: var(--glass-border-gold);
+  background: var(--color-gold-dim);
+}
+.org-switcher-label {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-switcher-chevron { opacity: 0.7; flex: 0 0 auto; transition: transform 0.2s ease; }
+.btn-org-switcher[aria-expanded="true"] .org-switcher-chevron { transform: rotate(180deg); }
+/* Anchor the glass dropdown to the right edge (it sits near the header's end). */
+.org-switcher-menu { left: auto; right: 0; min-width: 220px; }
+.org-switcher-menu .bulk-dd-item { justify-content: space-between; }
+.org-switcher-menu .bulk-dd-item.active { color: var(--color-gold); }
+.org-switcher-menu .org-check { color: var(--color-gold); font-size: 0.85rem; flex: 0 0 auto; }
+
 /* ============================================================
    VIEWS CONTAINER
    ============================================================ */

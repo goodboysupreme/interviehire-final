@@ -51,7 +51,12 @@ class InviteMemberIn(BaseModel):
     email: EmailStr
     designation: Optional[str] = None
     user_type: UserType = UserType.member
- 
+
+class UpdateMemberIn(BaseModel):
+    designation: Optional[str] = None
+    user_type: Optional[UserType] = None
+    status: Optional[UserStatus] = None
+
 class ChangePasswordIn(BaseModel):
     current_password: str
     new_password: str

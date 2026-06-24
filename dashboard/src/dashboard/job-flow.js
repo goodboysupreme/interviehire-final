@@ -10,7 +10,7 @@ import { renderJobCards } from './render-views.js';
 import { soundEngine } from './sound.js';
 import { navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
-import { getDataSource, ENGINE_WEB_URL, apiCreateTestSession } from './api.js';
+import { getDataSource, ENGINE_WEB_URL, apiCreateTestSession, apiUpdateJobStatus } from './api.js';
 import { ensureFunctionalBlueprint, computeCalibration } from './blueprint-engine.js';
 import { pushUrl } from './url-sync.js';
 import { openReportDrawerForCandidate } from './report.js';
@@ -203,6 +203,7 @@ function openPublishJobModal(jobId) {
     if (cardName) job.cardName = cardName;
     if (roleName) job.roleName = roleName;
     job.tags = tagsVal ? tagsVal.split(',').map(t => t.trim()).filter(Boolean) : [];
+    const prevStatus = job.status;
     job.status = 'published';
 
     if (job.pipelineConfig) {
@@ -213,6 +214,19 @@ function openPublishJobModal(jobId) {
     }
 
     saveStateToLocalStorage();
+
+    // Persist the published status to the backend so it survives a refresh.
+    // hydrateJobs() replaces AppState.jobs with the backend list on reload, so
+    // an unpersisted publish reverts to 'draft'. Roll back if the backend rejects.
+    if (getDataSource() === 'api' && job._backend) {
+      apiUpdateJobStatus(job.id, 'published').catch((e) => {
+        job.status = prevStatus;
+        saveStateToLocalStorage();
+        renderJobCards();
+        showPremiumToast(`Couldn't publish: ${(e && e.message) || 'backend error'}`, 'error');
+      });
+    }
+
     closeModal();
     soundEngine.playChime([392, 523.25, 659.25, 783.99], 0.2, 0.08);
     showPremiumToast(`Job "${job.roleName}" published successfully!`, 'success');

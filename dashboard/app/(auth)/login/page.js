@@ -28,8 +28,8 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await apiLogin(email.trim(), password);
-      router.replace('/dashboard');
+      const { onboardingRequired } = await apiLogin(email.trim(), password);
+      router.replace(onboardingRequired ? '/onboarding' : '/dashboard');
     } catch (err) {
       setError((err && err.message) || 'Sign in failed. Please try again.');
       setLoading(false);

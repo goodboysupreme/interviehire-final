@@ -20,7 +20,8 @@ import { soundEngine } from './sound.js';
 import { initSourcing, navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { renderSpotlightResults, SpotlightCommands, spotlightUi, toggleSpotlightModal } from './spotlight.js';
 import { AppState, generateJobId } from './state.js';
-import { apiCreateJob, apiPatchJobParameters, apiDeleteJob, apiUpdateJobStatus, isApiMode, getDataSource } from './api.js';
+import { apiCreateJob, apiPatchJobParameters, apiDeleteJob, apiUpdateJobStatus, apiInviteMember, isApiMode, getDataSource } from './api.js';
+import { initOrgSwitcher } from './org-switcher.js';
 
 // ==========================================
 // COMPONENT MOUNT BINDINGS
@@ -31,6 +32,11 @@ function initMountBindings() {
 
   // In api mode, hydrate jobs from the live backend (re-renders when ready).
   bootstrapApiData();
+
+  // Super-admin org switcher: expose a re-init hook so DashboardShell can rebuild
+  // it once /me has set the role globals, and try once now (no-op until known).
+  window.__ihInitOrgSwitcher = initOrgSwitcher;
+  initOrgSwitcher();
 
   // Sidebar Collapse Toggle
   const toggleSidebarBtn = document.getElementById('btn-toggle-sidebar');
@@ -749,7 +755,7 @@ function initMountBindings() {
 
   // 2. Invite Team Member Submission
   const inviteMemberForm = document.getElementById('form-invite-member');
-  inviteMemberForm.addEventListener('submit', (e) => {
+  inviteMemberForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const name = document.getElementById('member-name-input').value;
@@ -757,7 +763,7 @@ function initMountBindings() {
     const designation = document.getElementById('member-designation-input').value;
     const usertype = document.getElementById('member-role-input').value;
 
-    const newMember = {
+    let newMember = {
       name: name,
       email: email,
       designation: designation,
@@ -766,7 +772,19 @@ function initMountBindings() {
       status: 'Invited'
     };
 
+    // In api mode persist to the shared DB so the invite survives a refresh and
+    // the invitee gets a real account; abort with a clear error if it fails.
+    if (isApiMode()) {
+      try {
+        newMember = await apiInviteMember({ name, email, designation, usertype });
+      } catch (err) {
+        showPremiumToast(`Could not invite ${name}: ${(err && err.message) || 'backend error'}`, 'error');
+        return;
+      }
+    }
+
     AppState.team.push(newMember);
+    saveStateToLocalStorage();
 
     // Refresh display
     renderTeamTable();
@@ -777,15 +795,31 @@ function initMountBindings() {
     soundEngine.playChime([261.63, 392.00, 523.25], 0.2, 0.08); // Confirmation chime
   });
 
-  // 3. Settings Forms (Mock updates with inline alerts)
+  // 3. Settings Forms (persist to localStorage so they survive a refresh)
+  // Restore a previously saved career sub-domain into the field + status link.
+  (() => {
+    try {
+      const saved = localStorage.getItem('IntervieHire_career_subdomain');
+      if (!saved) return;
+      const field = document.getElementById('career-subdomain');
+      if (field) field.value = saved;
+      const statusLink = document.querySelector('.status-link');
+      if (statusLink) {
+        statusLink.textContent = `IntervieHire.com/careers/${saved} ↗`;
+        statusLink.href = `https://IntervieHire.com/careers/${saved}`;
+      }
+    } catch { /* ignore corrupt/blocked storage */ }
+  })();
+
   document.getElementById('career-settings-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
     soundEngine.playChime([523.25], 0.15);
     const domainName = document.getElementById('career-subdomain').value;
+    try { localStorage.setItem('IntervieHire_career_subdomain', domainName); } catch {}
     const statusLink = document.querySelector('.status-link');
     statusLink.textContent = `IntervieHire.com/careers/${domainName} ↗`;
     statusLink.href = `https://IntervieHire.com/careers/${domainName}`;
-    
+
     const submitBtn = e.target.querySelector('button[type="submit"]');
     const origText = submitBtn.textContent;
     submitBtn.textContent = '✓ Saved Settings!';
