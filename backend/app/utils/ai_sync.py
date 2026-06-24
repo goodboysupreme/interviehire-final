@@ -143,24 +143,16 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
         # 3. Sync Candidate
         candidate_id = str(applicant.id)
         # Extract résumé text so the engine can generate résumé-grounded questions.
-        resume_text = ""
+        # Prefer the text extracted + stored at upload time; it survives the ephemeral
+        # filesystem. Re-extract from the file only as a fallback when it still exists.
+        resume_text = applicant.resume_text or ""
         try:
-            if applicant.resume_url:
+            if not resume_text and applicant.resume_url:
                 from app.utils.resume_parser import extract_text_from_file
                 resume_text = extract_text_from_file(applicant.resume_url) or ""
         except Exception:
-            resume_text = ""
+            pass
         candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-        if not candidate:
-            # Respect the unique (companyId, email) constraint: reuse an existing
-            # candidate row for this email under the company rather than inserting a
-            # duplicate (which would 500 the schedule). The interview session keys
-            # off applicant.id, so pointing candidateId at the existing row is safe.
-            candidate = db.query(Candidate).filter(
-                Candidate.companyId == company_id, Candidate.email == applicant.email
-            ).first()
-            if candidate:
-                candidate_id = candidate.id
         if not candidate:
             candidate = Candidate(
                 id=candidate_id,
@@ -199,6 +191,14 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
         elif applicant.screening_status is not None:
             scheduled_at = applicant.screening_scheduled_at
 
+        # Per-job interview settings (camelCase JSON) → engine session for enforcement.
+        interview_settings = {}
+        if job.interview_settings:
+            try:
+                interview_settings = json.loads(job.interview_settings)
+            except Exception:
+                interview_settings = {}
+
         if not session:
             session = InterviewSession(
                 id=session_id,
@@ -208,7 +208,8 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
                 status=SessionStatus.SCHEDULED,
                 avatarProvider="ue5_pixel_streaming",
                 transcript=[],
-                scheduledAt=scheduled_at
+                scheduledAt=scheduled_at,
+                settings=interview_settings
             )
             db.add(session)
             db.commit()
@@ -224,6 +225,7 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
             session.websocketId = None
             session.ueSocketId = None
             session.scheduledAt = scheduled_at
+            session.settings = interview_settings
             db.commit()
             db.refresh(session)
 

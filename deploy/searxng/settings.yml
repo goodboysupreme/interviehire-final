@@ -1,0 +1,11 @@
+# SearXNG config for Talent Finder's Web Search source (local, free).
+# Inherits SearXNG defaults, then enables JSON output + allows programmatic access.
+use_default_settings: true
+server:
+  secret_key: "ih-talent-finder-dev-secret-change-me"
+  limiter: false          # allow our backend to query the JSON API
+  image_proxy: false
+search:
+  formats:
+    - html
+    - json

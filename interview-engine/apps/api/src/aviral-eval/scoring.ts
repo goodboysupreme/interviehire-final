@@ -3,12 +3,36 @@ import type {
   EvaluationConfidence,
   EvaluationMode,
   InterviewContext,
+  ProctoringSummary,
+  ProctoringViolation,
   QuestionEvaluationConfig,
+  RedFlagSeverity,
   Recommendation,
   ResponseEvaluation,
+  ScoreBreakdown,
   SkillScore,
 } from "./types.js";
 import { getDimensionWeights } from "./rubrics.js";
+
+// Per-answer content red-flag penalty (the LLM's redFlags on the answer itself).
+const CONTENT_FLAG_PENALTY: Record<RedFlagSeverity, number> = {
+  low: 2,
+  medium: 5,
+  high: 12,
+  critical: 25,
+};
+
+// Proctoring (integrity) penalty per logged violation severity.
+const PROCTORING_PENALTY: Record<string, number> = {
+  LOW: 1,
+  MEDIUM: 4,
+  HIGH: 10,
+  CRITICAL: 20,
+};
+
+// finalAnswerScore = 45% rubric coverage + 55% weighted dimensions − red-flag penalty
+const RUBRIC_WEIGHT = 0.45;
+const DIMENSION_WEIGHT = 0.55;
 
 export function inferEvaluationMode(question: QuestionEvaluationConfig): EvaluationMode {
   if (question.questionOrigin === "generated_followup") {
@@ -68,6 +92,156 @@ export function calculateAnswerScore(
   }
 
   return weightedAverage(weightedScores);
+}
+
+// Weighted dimension score (0-100) using the role/question-adjusted weights.
+export function computeWeightedDimensionScore(
+  evaluation: Pick<ResponseEvaluation, "dimensionScores">,
+  context: Pick<InterviewContext, "interviewType">,
+  question: QuestionEvaluationConfig,
+): number {
+  return calculateAnswerScore(evaluation, context, question);
+}
+
+// Rubric coverage (0-100): how many of the required model-answer concepts the
+// candidate covered, plus a little credit for bonus points, minus credit for
+// incorrect claims. Falls back to the LLM's own overallScore when the question
+// has no structured rubric / comparison to score against.
+export function computeRubricCoverageScore(
+  evaluation: ResponseEvaluation,
+  question: QuestionEvaluationConfig,
+): number {
+  const cmp = evaluation.modelAnswerComparison;
+  const rubric = question.modelAnswerRubric;
+
+  if (!cmp) {
+    return clampScore(evaluation.overallScore);
+  }
+
+  const covered = (cmp.coveredRequiredPoints ?? []).length;
+  const missed = (cmp.missedRequiredPoints ?? []).length;
+  const requiredTotal = rubric?.requiredPoints?.length || covered + missed;
+
+  if (requiredTotal === 0) {
+    // No required points to measure → use bonus/incorrect signal around the LLM score.
+    const base = clampScore(evaluation.overallScore);
+    const bonus = Math.min(10, (cmp.coveredBonusPoints ?? []).length * 3);
+    const wrong = Math.min(40, (cmp.incorrectClaims ?? []).length * 12);
+    return clampScore(base + bonus - wrong);
+  }
+
+  const coverage = (covered / requiredTotal) * 100;
+  const bonus = Math.min(10, (cmp.coveredBonusPoints ?? []).length * 3);
+  const wrong = Math.min(35, (cmp.incorrectClaims ?? []).length * 12);
+  return clampScore(coverage + bonus - wrong);
+}
+
+export function computeRedFlagPenalty(evaluation: ResponseEvaluation): number {
+  const raw = (evaluation.redFlags ?? []).reduce(
+    (sum, flag) => sum + (CONTENT_FLAG_PENALTY[flag.severity] ?? 0),
+    0,
+  );
+  return Math.min(40, raw);
+}
+
+// finalAnswerScore = 0.45*rubricCoverage + 0.55*weightedDimensions − redFlagPenalty.
+// Mutates the evaluation to carry the breakdown, and sets overallScore = finalScore
+// so the report aggregation runs on the final, penalty-adjusted number.
+export function enrichEvaluationScores(
+  evaluation: ResponseEvaluation,
+  context: Pick<InterviewContext, "interviewType">,
+  question: QuestionEvaluationConfig,
+): ResponseEvaluation {
+  const dimensionScore = computeWeightedDimensionScore(evaluation, context, question);
+  const rubricCoverageScore = computeRubricCoverageScore(evaluation, question);
+  const redFlagPenalty = computeRedFlagPenalty(evaluation);
+  const finalScore = clampScore(
+    RUBRIC_WEIGHT * rubricCoverageScore + DIMENSION_WEIGHT * dimensionScore - redFlagPenalty,
+  );
+
+  return {
+    ...evaluation,
+    rawLlmScore: evaluation.overallScore,
+    rubricCoverageScore,
+    dimensionScore,
+    redFlagPenalty,
+    finalScore,
+    overallScore: finalScore,
+  };
+}
+
+// ── Proctoring (integrity) ─────────────────────────────────────────────────────
+export interface ProctoringLogLike {
+  eventType: string;
+  severity: string;
+  occurredAt?: Date | string | null;
+  metadata?: unknown;
+}
+
+export function buildProctoringSummary(logs: ProctoringLogLike[]): ProctoringSummary {
+  const bySeverity: Record<string, number> = {};
+  let penalty = 0;
+  const violations: ProctoringViolation[] = [];
+
+  for (const log of logs) {
+    const sev = String(log.severity || "").toUpperCase();
+    bySeverity[sev] = (bySeverity[sev] ?? 0) + 1;
+    penalty += PROCTORING_PENALTY[sev] ?? 0;
+    let detail: string | undefined;
+    if (log.metadata && typeof log.metadata === "object") {
+      const m = log.metadata as Record<string, unknown>;
+      detail = (m.detail || m.message || m.reason || m.note) as string | undefined;
+    }
+    violations.push({
+      eventType: log.eventType,
+      severity: (["low", "medium", "high", "critical"].includes(sev.toLowerCase())
+        ? sev.toLowerCase()
+        : "medium") as RedFlagSeverity,
+      occurredAt: log.occurredAt ? new Date(log.occurredAt).toISOString() : undefined,
+      detail,
+    });
+  }
+
+  penalty = Math.min(40, penalty);
+  return {
+    totalEvents: logs.length,
+    bySeverity,
+    penalty,
+    integrityScore: clampScore(100 - penalty),
+    violations,
+  };
+}
+
+// Attach the proctoring summary + the explicit score-analysis breakdown to a report
+// and fold the proctoring penalty into the final overall score.
+export function applyProctoringToReport(
+  report: CandidateReport,
+  evaluations: ResponseEvaluation[],
+  proctoring: ProctoringSummary,
+): CandidateReport {
+  const answerAggregate = report.overallScore; // already the weighted aggregate of finalScores
+  const avg = (pick: (e: ResponseEvaluation) => number | undefined) => {
+    const vals = evaluations.map(pick).filter((v): v is number => typeof v === "number");
+    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+  };
+  const scoreBreakdown: ScoreBreakdown = {
+    rubricCoverageAvg: avg((e) => e.rubricCoverageScore),
+    dimensionAvg: avg((e) => e.dimensionScore),
+    redFlagPenaltyAvg: avg((e) => e.redFlagPenalty),
+    answerAggregate,
+    proctoringPenalty: proctoring.penalty,
+    finalScore: clampScore(answerAggregate - proctoring.penalty),
+    formula: "finalAnswerScore = 45% rubric coverage + 55% weighted dimensions − content red-flag penalty; overall − proctoring penalty",
+  };
+
+  const overallScore = scoreBreakdown.finalScore;
+  return {
+    ...report,
+    overallScore,
+    recommendation: getRecommendation(overallScore, report.redFlags),
+    proctoring,
+    scoreBreakdown,
+  };
 }
 
 export function aggregateCandidateReport(

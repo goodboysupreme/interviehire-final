@@ -34,6 +34,7 @@ class Job(Base):
     screening_parameters = Column(Text, nullable=True)
     functional_parameters = Column(Text, nullable=True)
     screening_questions = Column(Text, nullable=True)  # JSON array of AI-generated screening interview questions
+    interview_settings = Column(Text, nullable=True)   # JSON: per-job interview settings (mobile/late/cv/access/etc.)
 
     # Pipeline stage toggles
     resume_analysis_enabled = Column(Boolean, default=True)

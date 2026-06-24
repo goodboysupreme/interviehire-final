@@ -98,7 +98,13 @@ def parse_resume_local_heuristics(file_text: str, filename: str) -> Dict[str, An
             "july", "august", "september", "october", "november", "december",
             "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
             "contact", "phone", "email", "address", "links", "about", "me", "hobbies",
-            "certifications", "languages", "gpa", "cgpa", "phone:", "email:"
+            "certifications", "languages", "gpa", "cgpa", "phone:", "email:",
+            # job-title / role words so the name doesn't absorb the headline
+            "developer", "engineer", "backend", "frontend", "fullstack", "full-stack",
+            "senior", "junior", "lead", "manager", "designer", "analyst", "consultant",
+            "architect", "scientist", "intern", "specialist", "administrator", "devops",
+            "software", "web", "data", "cloud", "mobile", "product", "project", "qa",
+            "tester", "programmer", "technical", "associate", "executive", "officer"
         }
         for word in words[:15]:
             clean_word = re.sub(r"[^\w]", "", word)

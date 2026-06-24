@@ -680,6 +680,36 @@ body.light-theme .jf-question-edit-row:hover {
 }
 .jf-input-sm::placeholder { color: var(--color-text-faint); }
 
+/* Custom screening params — editable rows + add/remove controls */
+.jf-cat-title-input { flex: 1; min-width: 0; background: transparent; border: none; border-bottom: 1px solid transparent; font-family: var(--font-display); font-size: 0.88rem; font-weight: 600; color: var(--color-text-primary); padding: 2px 0; }
+.jf-cat-title-input:focus { outline: none; border-bottom-color: var(--glass-border); }
+.jf-cat-del { background: transparent; border: none; color: var(--color-text-faint); font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 6px; border-radius: 6px; transition: color 0.15s ease; }
+.jf-cat-del:hover { color: #ef4444; }
+.jf-pr-del { display: flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--color-text-faint); cursor: pointer; padding: 0; border-radius: 6px; transition: color 0.15s ease, background 0.15s ease; }
+.jf-pr-del:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+.jf-add-param { margin: 8px 0 4px; }
+.jf-add-param, .jf-add-category {
+  font-family: var(--font-body); font-size: 0.76rem; font-weight: 600;
+  color: var(--color-text-muted); background: rgba(255,255,255,0.03);
+  border: 1px dashed var(--glass-border); border-radius: 8px; padding: 8px 12px;
+  cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.jf-add-param:hover, .jf-add-category:hover { background: rgba(255,255,255,0.06); border-color: var(--color-gold); color: var(--color-gold); }
+.jf-screening-actions { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+
+/* Resume-criteria suggestions */
+.ra-edit-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.btn-ra-suggest { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-body); font-size: 0.74rem; font-weight: 600; color: var(--color-gold); background: rgba(45,212,191,0.08); border: 1px solid var(--glass-border); border-radius: 8px; padding: 7px 11px; cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease; }
+.btn-ra-suggest:hover:not(:disabled) { background: rgba(45,212,191,0.16); border-color: var(--color-gold); }
+.btn-ra-suggest:disabled { opacity: 0.6; cursor: default; }
+.ra-suggest-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--glass-border); border-radius: 12px; background: rgba(255,255,255,0.02); display: flex; flex-direction: column; gap: 8px; }
+.ra-suggest-head { display: flex; align-items: center; justify-content: space-between; font-size: 0.72rem; color: var(--color-text-muted); }
+.ra-suggest-dismiss { background: transparent; border: none; color: var(--color-text-faint); font-size: 1rem; line-height: 1; cursor: pointer; padding: 0 4px; }
+.ra-suggest-dismiss:hover { color: var(--color-text-primary); }
+.ra-suggest-loading { font-size: 0.78rem; color: var(--color-text-muted); }
+.ra-suggest-chip { display: block; width: 100%; text-align: left; font-family: var(--font-body); font-size: 0.8rem; color: var(--color-text-primary); background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; padding: 8px 11px; cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease; }
+.ra-suggest-chip:hover { background: rgba(255,255,255,0.07); border-color: var(--color-gold); }
+
 /* Interview Structure */
 .jf-interview-structure {
   display: flex;

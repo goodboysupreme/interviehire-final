@@ -1,9 +1,10 @@
 import { document, signal, setTimeout, setInterval, clearInterval } from './runtime.js';
 import { escapeHTML } from './escape.js';
 import { filterCandidatesByDateRange, renderAnalyticsTable, renderJobCards, updateSummaryMetrics } from './render-views.js';
+import { saveStateToLocalStorage } from './ai-api.js';
 import { soundEngine } from './sound.js';
 import { AppState } from './state.js';
-import { getDataSource } from './api.js';
+import { getDataSource, apiMoveApplicantStage } from './api.js';
 
 // ==========================================
 // CREATIVE FEATURES ADDITIONAL LOGIC
@@ -106,7 +107,20 @@ function renderKanbanBoard() {
   });
 }
 
-function advanceCandidate(candId) {
+async function syncStageToBackend(candidate, newStatus) {
+  if (getDataSource() !== 'api' || !candidate?._backend) return;
+  const id = candidate.backendId || candidate.id;
+  const keep = { jobApplied: candidate.jobApplied, jobId: candidate.jobId, registeredOn: candidate.registeredOn };
+  const updated = await apiMoveApplicantStage(id, newStatus);
+  if (updated) {
+    Object.assign(candidate, updated);
+    if (keep.jobApplied) candidate.jobApplied = keep.jobApplied;
+    if (keep.jobId) candidate.jobId = keep.jobId;
+    if (keep.registeredOn) candidate.registeredOn = keep.registeredOn;
+  }
+}
+
+async function advanceCandidate(candId) {
   const candidate = AppState.candidates.find(c => c.id === candId);
   if (!candidate) return;
 
@@ -123,6 +137,7 @@ function advanceCandidate(candId) {
 
   if (newStatus !== currentStatus) {
     candidate.status = newStatus;
+    saveStateToLocalStorage();
     
     // Play sound chime
     soundEngine.playChime([329.63, 440.00, 523.25], 0.2, 0.08);
@@ -136,6 +151,27 @@ function advanceCandidate(candId) {
       renderKanbanBoard();
     } else {
       renderJobCards();
+    }
+
+    try {
+      await syncStageToBackend(candidate, newStatus);
+      saveStateToLocalStorage();
+      recalculateJobPipelines();
+      updateSummaryMetrics();
+      renderAnalyticsTable();
+      if (document.getElementById('jobs-board-container').style.display !== 'none') {
+        renderKanbanBoard();
+      } else {
+        renderJobCards();
+      }
+    } catch (err) {
+      console.warn('Stage change saved locally but backend sync failed:', err);
+      candidate.status = currentStatus;
+      saveStateToLocalStorage();
+      recalculateJobPipelines();
+      updateSummaryMetrics();
+      renderAnalyticsTable();
+      renderKanbanBoard();
     }
   }
 }

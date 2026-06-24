@@ -49,6 +49,14 @@ export const html = `
               </svg>
               <span>AI Swarm</span>
             </li>
+            <li class="nav-item" data-tab="talent">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                <path d="M8 11h6"></path>
+              </svg>
+              <span>Talent Finder</span>
+            </li>
             <li class="nav-item" data-tab="team">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -566,6 +574,16 @@ export const html = `
           </section>
 
           <!-- ===================================== -->
+          <!-- TALENT FINDER VIEW (top-level page) -->
+          <!-- ===================================== -->
+          <section class="dashboard-view" id="view-talent">
+            <!-- Rendered by talent-finder-panel.js into #jd-pane-talent -->
+            <div id="jd-pane-talent">
+              <div class="tf-muted" style="padding:20px">Loading Talent Finder…</div>
+            </div>
+          </section>
+
+          <!-- ===================================== -->
           <!-- CAREER PAGE VIEW (TAB 4) -->
           <!-- ===================================== -->
           <section class="dashboard-view" id="view-career">
@@ -823,6 +841,11 @@ export const html = `
                   Functional Interview
                   <span class="jd-count-pill" id="jd-count-functional">0</span>
                 </button>
+                <button class="jd-tab" data-jd-tab="interviewanalysis">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path></svg>
+                  Interview Analysis
+                  <span class="jd-count-pill" id="jd-count-interviewanalysis">0</span>
+                </button>
                 <button class="jd-tab" data-jd-tab="questions">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line><circle cx="12" cy="12" r="10"></circle></svg>
                   Questions Generator
@@ -945,6 +968,11 @@ export const html = `
               </div>
               <div class="jd-pane" id="jd-pane-functional">
                 <div class="jd-stage-candidates-list" id="list-stage-functional"></div>
+              </div>
+
+              <!-- Interview Analysis Pane (rendered by interview-analysis.js) -->
+              <div class="jd-pane" id="jd-pane-interviewanalysis">
+                <div class="jd-stage-candidates-list" id="list-stage-interviewanalysis"></div>
               </div>
 
               <!-- Questions Generator Pane (rendered by blueprint-studio.js) -->
@@ -1575,6 +1603,16 @@ export const html = `
               </div>
             </div>
             <div class="settings-toggle active" id="iset-toggle-proctor"></div>
+          </div>
+          <div class="iset-row">
+            <div class="iset-row-left">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+              <div class="iset-row-info">
+                <span class="iset-label">White labelled interview</span>
+                <span class="iset-hint">Show your company branding in the interview room</span>
+              </div>
+            </div>
+            <div class="settings-toggle" id="iset-toggle-whitelabel"></div>
           </div>
           <div class="iset-row">
             <div class="iset-row-left">

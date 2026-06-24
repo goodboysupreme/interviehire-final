@@ -102,7 +102,8 @@ def _build_job_out(job: Job, db: Session) -> dict:
         "resume_parameters": json.loads(job.resume_parameters) if job.resume_parameters else None,
         "screening_parameters": json.loads(job.screening_parameters) if job.screening_parameters else None,
         "functional_parameters": json.loads(job.functional_parameters) if job.functional_parameters else None,
-        "screening_questions": json.loads(job.screening_questions) if job.screening_questions else None
+        "screening_questions": json.loads(job.screening_questions) if job.screening_questions else None,
+        "interview_settings": json.loads(job.interview_settings) if job.interview_settings else None
     }
 
 
@@ -1296,6 +1297,7 @@ def _build_job_detail_out(job: Job) -> dict:
         "screening_parameters": json.loads(job.screening_parameters) if job.screening_parameters else None,
         "functional_parameters": json.loads(job.functional_parameters) if job.functional_parameters else None,
         "screening_questions": json.loads(job.screening_questions) if job.screening_questions else None,
+        "interview_settings": json.loads(job.interview_settings) if job.interview_settings else None,
         "tags": tags
     }
 
@@ -1367,6 +1369,8 @@ def update_job_parameters(
         job.functional_parameters = json.dumps(data.functional_parameters)
     if data.screening_questions is not None:
         job.screening_questions = json.dumps(data.screening_questions)
+    if data.interview_settings is not None:
+        job.interview_settings = json.dumps(data.interview_settings)
     db.commit()
     db.refresh(job)
     return _build_job_detail_out(job)
@@ -1423,16 +1427,109 @@ def create_test_session(
     return {"session_id": str(test_applicant.id)}
 
 
+@router.get("/{job_id}/test-report")
+def get_test_report(
+    job_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    """Read-only: return the report for this job's throwaway "Run test interview"
+    session so the recruiter can review it in Deep Analysis. The test applicant is
+    deliberately excluded from the funnel, responses tabs and analytics, so this
+    dedicated endpoint surfaces only its evaluation (no pollution of those counts).
+    Returns {exists, evaluated, status, report}."""
+    _verify_job_access(job_id, current_user, active_org_id, db)
+    test_applicant = db.query(Applicant).filter(
+        Applicant.job_id == job_id,
+        Applicant.remarks == TEST_SESSION_REMARK
+    ).first()
+    if not test_applicant:
+        return {"exists": False, "evaluated": False, "status": "none", "report": None}
+    from app.utils.ai_sync import get_applicant_full_report
+    full = get_applicant_full_report(db, str(test_applicant.id))
+    return {"exists": True, **full}
+
+
 
 # ─── RESPONSES (candidates for a job) ────────────────────────────────────────
+
+def _proctoring_flag_for_session(db: Session, session_id: str) -> Optional[str]:
+    """Derive a proctoring severity flag (critical/high/medium/None) from the
+    session's ProctoringLog rows — same buckets as the completion webhook so the
+    autonomous reconcile path produces identical cheat-probability data."""
+    from app.models.ai_integration import ProctoringLog, Severity
+    logs = db.query(ProctoringLog).filter(ProctoringLog.sessionId == session_id).all()
+    if not logs:
+        return None
+    critical = [l for l in logs if l.severity == Severity.CRITICAL]
+    high = [l for l in logs if l.severity == Severity.HIGH]
+    if len(critical) > 0:
+        return "critical"
+    if len(high) > 0:
+        return "high"
+    if any(l.severity == Severity.MEDIUM for l in logs):
+        return "medium"
+    return "low"
+
+
+def _persist_interview_report(db: Session, applicant, session, ev: dict) -> bool:
+    """Durably upsert the dashboard-owned InterviewReport row from an EVALUATED
+    session's stored evaluation, so the report survives independently of the
+    engine's session and the Interview Analysis tab has a stable store to read.
+    Idempotent: returns True only when a row was created or its summary changed."""
+    import json
+    from app.models.interview_report import InterviewReport
+    transcript_list = session.transcript or []
+    if isinstance(transcript_list, str):
+        try:
+            transcript_list = json.loads(transcript_list)
+        except Exception:
+            transcript_list = []
+    transcript_text = ""
+    video_url = None
+    if isinstance(transcript_list, list):
+        recordings = [t for t in transcript_list if isinstance(t, dict) and t.get("type") == "recording"]
+        if recordings:
+            video_url = recordings[-1].get("url")
+        for entry in transcript_list:
+            if isinstance(entry, dict):
+                speaker = entry.get("speaker") or entry.get("type") or "Participant"
+                text = entry.get("text") or ""
+                if text:
+                    transcript_text += f"{speaker}: {text}\n"
+
+    summary = ev.get("summary") or ""
+    detailed_scores = ev  # the full canonical CandidateReport (incl. .structured)
+    report = db.query(InterviewReport).filter(InterviewReport.applicant_id == applicant.id).first()
+    if not report:
+        db.add(InterviewReport(
+            applicant_id=applicant.id,
+            summary=summary,
+            transcript=transcript_text,
+            video_url=video_url,
+            detailed_scores=detailed_scores,
+        ))
+        return True
+    # Refresh stored copy if the evaluation summary changed (re-evaluation).
+    if report.summary != summary:
+        report.summary = summary
+        report.transcript = transcript_text
+        report.video_url = video_url
+        report.detailed_scores = detailed_scores
+        return True
+    return False
+
 
 def _reconcile_functional_from_sessions(db: Session, applicants: list) -> None:
     """Reflect completed AI interviews in the recruiter view: an EVALUATED
     InterviewSession (written by the interview engine into the shared DB) marks
-    the applicant completed and copies its score, so the dashboard's Deep
-    Analysis sees real results without waiting on the completion webhook."""
+    the applicant completed, copies its score, derives the proctoring/cheat flag,
+    and durably persists the InterviewReport — so the dashboard's Deep Analysis
+    and Interview Analysis tab see real, saved results fully autonomously (no
+    manual step, no dependency on the completion webhook)."""
     from app.models.ai_integration import InterviewSession, SessionStatus
-    from app.models.applicant import InterviewStatus
+    from app.models.applicant import InterviewStatus, CheatProbability
     changed = False
     for a in applicants:
         session = db.query(InterviewSession).filter(InterviewSession.id == str(a.id)).first()
@@ -1451,6 +1548,23 @@ def _reconcile_functional_from_sessions(db: Session, applicants: list) -> None:
             if session.reportUrl and a.report_url != session.reportUrl:
                 a.report_url = session.reportUrl
                 changed = True
+            # Proctoring → cheat probability (only set once, when not already known).
+            if a.proctoring_severity_flag is None:
+                flag = _proctoring_flag_for_session(db, str(a.id))
+                if flag is not None:
+                    a.proctoring_severity_flag = flag
+                    a.cheat_probability = (
+                        CheatProbability.high if flag in ("critical", "high")
+                        else CheatProbability.medium if flag == "medium"
+                        else CheatProbability.low
+                    )
+                    changed = True
+            # Durable, dashboard-owned report storage.
+            try:
+                if _persist_interview_report(db, a, session, ev):
+                    changed = True
+            except Exception:
+                pass
         elif session.status == SessionStatus.IN_PROGRESS and a.functional_status is None:
             a.functional_status = InterviewStatus.scheduled
             changed = True
@@ -1486,6 +1600,61 @@ def get_responses(
     elif tab == "functional":
         return [a for a in applicants if a.functional_status is not None]
     return applicants
+
+
+@router.get("/{job_id}/interview-analysis")
+def get_interview_analysis(
+    job_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db),
+):
+    """Job-level Interview Analysis listing: every applicant whose AI interview has
+    been EVALUATED, with a compact summary read from the stored evaluation. The
+    reconcile pass first persists scores/proctoring/InterviewReport autonomously,
+    so the list reflects reports the moment the candidate finishes — no manual
+    transcript→LLM→upload step. The full report is fetched per-row on open via
+    GET /applicants/{id}/functional-report."""
+    from app.models.ai_integration import InterviewSession, SessionStatus
+
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
+    applicants = [
+        a for a in db.query(Applicant).filter(Applicant.job_id == job_id).all()
+        if not _is_test_applicant(a)
+    ]
+    _reconcile_functional_from_sessions(db, applicants)
+
+    out = []
+    for a in applicants:
+        session = db.query(InterviewSession).filter(InterviewSession.id == str(a.id)).first()
+        if not session or session.status != SessionStatus.EVALUATED or not session.evaluation:
+            continue
+        ev = session.evaluation or {}
+        structured = ev.get("structured") or {}
+        breakdown = ev.get("questionBreakdown") or structured.get("questionBreakdown") or []
+        proctoring = structured.get("proctoring") or ev.get("proctoring") or {}
+        violations = proctoring.get("violations") if isinstance(proctoring, dict) else None
+        out.append({
+            "applicant_id": str(a.id),
+            "name": a.name,
+            "email": a.email,
+            "status": session.status.value,
+            "overall_score": ev.get("overallScore"),
+            "recommendation": ev.get("recommendation") or structured.get("recommendation"),
+            "summary": ev.get("summary") or structured.get("summary") or "",
+            "question_count": len(breakdown),
+            "proctoring_severity": a.proctoring_severity_flag,
+            "cheat_probability": a.cheat_probability.value if a.cheat_probability else None,
+            "violation_count": len(violations) if isinstance(violations, list) else 0,
+            "has_structured": bool(structured),
+            "report_url": session.reportUrl,
+            "evaluated_at": session.completedAt.isoformat() if session.completedAt else None,
+            "source": a.source.value if a.source else None,
+        })
+
+    # Most recently evaluated first.
+    out.sort(key=lambda r: r.get("evaluated_at") or "", reverse=True)
+    return out
 
 
 def _build_funnel(applicants: list) -> dict:
@@ -1725,6 +1894,9 @@ def upload_resumes(
         parsed_name = parsed_info.get("name")
         parsed_email = parsed_info.get("email")
         parsed_phone = parsed_info.get("phone")
+        resume_text = extract_text_from_file(file_path)  # store the real text for analysis
+        if resume_text and len(resume_text.strip()) < 50:
+            resume_text = None  # extraction likely failed (scanned/garbled) — don't poison analysis with junk
         
         # Look for an existing candidate in this job pipeline with a matching email or name
         existing_applicant = None
@@ -1745,9 +1917,9 @@ def upload_resumes(
         if existing_applicant:
             # Map resume to the existing candidate record
             existing_applicant.resume_url = file_path
-            if resume_text:  # don't clobber a previously-stored resume with a failed re-extract
+            if resume_text:
                 existing_applicant.resume_text = resume_text
-
+            
             # Preserve the source: do not overwrite existing source if already set
             if not existing_applicant.source and source:
                 existing_applicant.source = source
@@ -1779,7 +1951,7 @@ def upload_resumes(
                 phone=parsed_phone or "+1 555-0199",
                 source=source or ApplicantSource.bulk_upload,
                 resume_url=file_path,
-                resume_text=resume_text,
+                resume_text=resume_text or None,
                 job_id=job_id,
                 resume_analysed=False
             )
@@ -1951,7 +2123,7 @@ def schedule_interview(
         reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
         # The candidate joins the SAME AI interview room as "Run test interview"
         # (the engine web app), keyed by the applicant id as the session id.
-        interview_link = f"{settings.INTERVIEW_ROOM_URL.rstrip('/')}/interview?sessionId={applicant.id}"
+        interview_link = f"{settings.INTERVIEW_ROOM_URL.rstrip('/')}/interviewcandidateroom?sessionId={applicant.id}"
         uid = f"interview-{stage_name.lower().replace(' ', '-')}-{applicant.id}@interviehire.com"
         send_ical_invitation_email(
             candidate_name=applicant.name,
@@ -2032,18 +2204,15 @@ def get_applicant_resume_text(
     db: Session = Depends(get_db)
 ):
     applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
-
-    # Prefer the persisted text — survives Railway's ephemeral-filesystem wipe that
-    # leaves resume_url pointing at a file that no longer exists.
+    # Prefer the text extracted at upload time: it lives in the DB and survives the
+    # ephemeral filesystem (Railway has no persistent disk by default, so uploads/ is
+    # wiped on every redeploy/restart). Only re-extract from the file if we never stored it.
     if applicant.resume_text:
         return {"text": applicant.resume_text}
-
-    if not applicant.resume_url or not os.path.exists(applicant.resume_url):
-        return {"text": ""}
-
-    from app.utils.resume_parser import extract_text_from_file
-    file_text = extract_text_from_file(applicant.resume_url)
-    return {"text": file_text}
+    if applicant.resume_url and os.path.exists(applicant.resume_url):
+        from app.utils.resume_parser import extract_text_from_file
+        return {"text": extract_text_from_file(applicant.resume_url)}
+    return {"text": ""}
 
 
 @router.get("/applicants/{applicant_id}/screening-report")
@@ -2082,6 +2251,47 @@ def get_functional_report(
     applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
     from app.utils.ai_sync import get_applicant_full_report
     return get_applicant_full_report(db, str(applicant_id))
+
+
+@router.get("/applicants/{applicant_id}/transcript-download")
+def download_interview_transcript(
+    applicant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    """Download the full interview transcript as plain text. Reads the projected
+    transcript from the shared InterviewSession (candidate + AI interviewer turns)."""
+    from fastapi import Response
+    applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
+    from app.models.ai_integration import InterviewSession
+    session = db.query(InterviewSession).filter(InterviewSession.id == str(applicant_id)).first()
+    turns = (session.transcript if session else None) or []
+    if not turns:
+        raise HTTPException(status_code=404, detail="No transcript recorded for this interview yet.")
+
+    def speaker_label(s: str) -> str:
+        s = (s or "").lower()
+        if s in ("ai", "interviewer", "assistant"):
+            return "Interviewer"
+        if s in ("candidate", "user", "human"):
+            return "Candidate"
+        return (s or "Speaker").title()
+
+    lines = [f"Interview transcript — {applicant.name}", "=" * 48, ""]
+    for t in turns:
+        text = (t.get("text") if isinstance(t, dict) else str(t)) or ""
+        if not str(text).strip():
+            continue
+        spk = speaker_label(t.get("speaker") if isinstance(t, dict) else "")
+        lines.append(f"{spk}: {str(text).strip()}")
+    body = "\n".join(lines) + "\n"
+    safe_name = "".join(c for c in (applicant.name or "candidate") if c.isalnum() or c in " -_").strip().replace(" ", "_")
+    return Response(
+        content=body,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="transcript_{safe_name}.txt"'},
+    )
 
 from fastapi import Header
 

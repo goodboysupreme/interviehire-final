@@ -124,6 +124,7 @@ model InterviewSession {
   avatarProvider String         @default("ue5_pixel_streaming")
   evaluation     Json?
   reportUrl      String?
+  settings       Json           @default("{}")
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)

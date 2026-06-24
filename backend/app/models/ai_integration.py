@@ -132,6 +132,7 @@ class InterviewSession(Base):
     avatarProvider = Column(String, default="ue5_pixel_streaming", nullable=False)
     evaluation = Column(JSONB, nullable=True)
     reportUrl = Column(String, nullable=True)
+    settings = Column(JSONB, default=dict, nullable=False)  # per-job interview settings synced from the backend Job
     createdAt = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updatedAt = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now(), nullable=False)
 

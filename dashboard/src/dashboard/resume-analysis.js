@@ -1141,14 +1141,19 @@ async function handleResumeImportFile(file, job) {
     return;
   }
 
-  rows.forEach(r => {
-    const cid = addCandidateToAppState(r.name || r.email || 'Imported Candidate', r.email, r.phone, job);
-    const cand = AppState.candidates.find(c => c.id === cid);
-    if (cand) { cand.status = 'Resume'; cand.resumeLink = r.link; }
-  });
+  let ok = 0;
+  for (const r of rows) {
+    try {
+      const cid = await addCandidateToAppState(r.name || r.email || 'Imported Candidate', r.email, r.phone, job);
+      const cand = AppState.candidates.find(c => c.id === cid);
+      if (cand) { cand.status = 'Resume'; cand.resumeLink = r.link; }
+      ok++;
+    } catch (e) { /* skip rows that fail to persist */ }
+  }
   saveStateToLocalStorage();
   renderJobDetailPanes(job);
-  showPremiumToast(`Imported ${rows.length} candidate${rows.length > 1 ? 's' : ''}. Click "Analyse All" to fetch & score their resumes.`, 'success');
+  if (!ok) { showPremiumToast('Could not import candidates (backend error).', 'error'); return; }
+  showPremiumToast(`Imported ${ok} candidate${ok > 1 ? 's' : ''}${ok < rows.length ? ` · ${rows.length - ok} failed` : ''}. Click "Analyse All" to fetch & score their resumes.`, 'success');
 }
 
 function downloadResumeImportTemplate() {

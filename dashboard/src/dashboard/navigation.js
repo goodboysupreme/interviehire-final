@@ -16,6 +16,7 @@ import { EXPERIENCE_BANDS_PROMPT } from './constants.js';
 import { callDeepSeekAPI, enrichJobWithAI, parseAIJson, saveStateToLocalStorage } from './ai-api.js';
 import { openJobFlowView, toggleHeaderElementsForJobFlow } from './job-flow.js';
 import { renderKanbanBoard, resetWaveformAudio, startSwarmLogs } from './kanban-swarm.js';
+import { renderTalentFinderPane } from './talent-finder-panel.js';
 import { renderAnalyticsTable, renderJobCards, renderTeamTable, updateSummaryMetrics } from './render-views.js';
 import { soundEngine } from './sound.js';
 import { AppState, generateJobId } from './state.js';
@@ -36,6 +37,7 @@ function navigateToTab(tabId) {
     'jobs':      '/dashboard/jobs',
     'analytics': '/dashboard/analytics',
     'swarm':     '/dashboard/swarm',
+    'talent':    '/dashboard/talent',
     'team':      '/dashboard/team',
     'career':    '/dashboard/career',
     'settings':  '/dashboard/settings/general',
@@ -105,6 +107,15 @@ function navigateToTab(tabId) {
     document.getElementById('view-swarm').classList.add('active-view');
     startSwarmLogs();
     soundEngine.playChime([261.63, 329.63, 440.00], 0.15, 0.12);
+
+  } else if (tabId === 'talent') {
+    breadcrumb.textContent = 'Talent Finder';
+    mainTitle.textContent = 'Talent Finder';
+    subText.textContent = 'Compliant AI sourcing — search, rank, and reach out to candidates';
+    actionBtn.style.display = 'none'; // No primary CTA for the talent finder page
+    document.getElementById('view-talent').classList.add('active-view');
+    renderTalentFinderPane(null);
+    soundEngine.playChime([261.63, 392.00, 523.25], 0.15, 0.12);
 
   } else if (tabId === 'team') {
     breadcrumb.textContent = 'Team Access';

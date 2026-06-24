@@ -150,6 +150,7 @@ export interface FollowupAnalysis {
 export interface ResponseEvaluation {
   answerId: string;
   questionId: string;
+  questionText?: string;
   questionOrigin: QuestionOrigin;
   evaluationMode: EvaluationMode;
   overallScore: number;
@@ -167,6 +168,38 @@ export interface ResponseEvaluation {
   evaluationConfidence: EvaluationConfidence;
   summary: string;
   transcriptOnly: true;
+  // Deterministic scoring breakdown (computed from the LLM judgment, not asked of it):
+  // finalScore = 0.45*rubricCoverageScore + 0.55*dimensionScore - redFlagPenalty
+  rubricCoverageScore?: number;
+  dimensionScore?: number;
+  redFlagPenalty?: number;
+  finalScore?: number;
+  rawLlmScore?: number;
+}
+
+export interface ProctoringViolation {
+  eventType: string;
+  severity: RedFlagSeverity;
+  occurredAt?: string;
+  detail?: string;
+}
+
+export interface ProctoringSummary {
+  totalEvents: number;
+  bySeverity: Record<string, number>;
+  penalty: number;
+  integrityScore: number;
+  violations: ProctoringViolation[];
+}
+
+export interface ScoreBreakdown {
+  rubricCoverageAvg: number;
+  dimensionAvg: number;
+  redFlagPenaltyAvg: number;
+  answerAggregate: number;   // weighted aggregate of per-answer finalScore (before proctoring)
+  proctoringPenalty: number;
+  finalScore: number;        // answerAggregate - proctoringPenalty (clamped)
+  formula: string;
 }
 
 export interface SkillScore {
@@ -191,6 +224,9 @@ export interface CandidateReport {
   questionBreakdown: ResponseEvaluation[];
   suggestedNextSteps: string[];
   transcriptOnly: true;
+  proctoring?: ProctoringSummary;
+  scoreBreakdown?: ScoreBreakdown;
+  evaluationEngine?: string;
   futureSignalPlaceholders: {
     audioAnalysisEnabled: false;
     videoAnalysisEnabled: false;

@@ -1,10 +1,14 @@
 import { prisma } from '../lib/prisma.js';
 import { callDeepSeekJson } from './deepseek.service.js';
+import { callOpenAIJson, isOpenAIConfigured } from './openai.service.js';
 import { getEffectiveQuestions } from './effective-questions.js';
 import { pairAnsweredEvalQuestions } from '@interviehire/shared';
 import {
   aggregateCandidateReport,
+  applyProctoringToReport,
   buildAnswerEvaluationPrompt,
+  buildProctoringSummary,
+  enrichEvaluationScores,
   validateResponseEvaluation,
   type CandidateResponseInput,
   type DimensionScore,
@@ -106,16 +110,31 @@ export async function evaluateInterviewWithAviral(sessionId: string): Promise<an
     buildResponseInput(session.id, question, answer, index),
   );
 
-  const evaluations = await evaluateInputsWithDeepSeek(context, inputs);
+  const rawEvaluations = await evaluateInputsWithDeepSeek(context, inputs);
+
+  // Apply the deterministic scoring formula to every answer:
+  // finalAnswerScore = 45% rubric coverage + 55% weighted dimensions − red-flag penalty.
+  const evaluations = rawEvaluations.map((evaluation, index) => ({
+    ...enrichEvaluationScores(evaluation, context, inputs[index].question),
+    questionText: inputs[index].question.questionText,
+  }));
 
   const report = aggregateCandidateReport(context, evaluations);
-  const proctoringSummary = {
-    eventCount: session.proctoringLogs.length,
-    criticalOrHighCount: session.proctoringLogs.filter((log: any) => ['CRITICAL', 'HIGH'].includes(log.severity)).length,
-  };
+
+  // Proctoring (integrity): list every violation, penalise the overall score, and
+  // expose the full score analysis. eventType/severity/metadata come from ProctoringLog.
+  const proctoring = buildProctoringSummary(
+    session.proctoringLogs.map((log) => ({
+      eventType: log.eventType,
+      severity: log.severity,
+      occurredAt: log.occurredAt,
+      metadata: log.metadata,
+    })),
+  );
+
   const finalReport = {
-    ...report,
-    proctoringSummary,
+    ...applyProctoringToReport(report, evaluations, proctoring),
+    evaluationEngine: isOpenAIConfigured() ? 'aviral_openai' : 'aviral_openrouter',
   };
 
   await prisma.interviewSession.update({
@@ -215,9 +234,13 @@ async function evaluateSingleInput(
 
   // One retry absorbs a transient timeout or a single bad-JSON blip so it doesn't
   // shrink the judge panel — or, at JUDGE_COUNT=1, silently drop the whole answer.
+  // Prefer OpenAI (gpt-4o) for the analysis when OPENAI_API_KEY is set; otherwise
+  // fall back to the configured OpenRouter/DeepSeek client so grading still works.
+  const judge = isOpenAIConfigured() ? callOpenAIJson : callDeepSeekJson;
+
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      const raw = await callDeepSeekJson<ResponseEvaluation>({
+      const raw = await judge<ResponseEvaluation>({
         systemInstruction:
           'You are a rigorous, fair technical interview evaluator. Return strict JSON exactly matching the requested ResponseEvaluation schema.',
         prompt,

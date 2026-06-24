@@ -7,11 +7,12 @@
 #   - interviehire-engine   (Fastify)  → interview sessions + transcript + report
 # Point the Vercel front-ends at these (see DEPLOY.md).
 
-# Postgres is hosted on RAILWAY (one shared DB), no longer on Render. Both
-# services below set DATABASE_URL to that Railway connection string via
-# `sync: false` — paste the same Railway URL into BOTH services in the Render
-# dashboard. Engine = Prisma tables, backend = SQLAlchemy tables, ONE shared DB.
-# (The test-interview handoff breaks if they ever point at different DBs.)
+databases:
+  - name: interviehire-db
+    plan: free
+    databaseName: interviehire
+    # Both services attach to this one Postgres (engine = Prisma tables,
+    # backend = SQLAlchemy tables, same DB — matches local).
 
 services:
   # ── FastAPI backend (recruiter dashboard API: auth, jobs, applicants) ──
@@ -29,7 +30,9 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
-        sync: false   # Railway Postgres — SAME value for backend + engine
+        fromDatabase:
+          name: interviehire-db
+          property: connectionString
       # The dashboard's public origin (Vercel), used for CORS + auth cookie.
       # e.g. https://app.interviehire.com — paste when prompted.
       - key: FRONTEND_URL
@@ -67,7 +70,9 @@ services:
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
-        sync: false   # Railway Postgres — SAME value for backend + engine
+        fromDatabase:
+          name: interviehire-db
+          property: connectionString
       # Avatar voice → Deepgram (webm-native). Candidate side is keyless browser STT.
       - key: DEEPGRAM_API_KEY
         sync: false

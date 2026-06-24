@@ -877,6 +877,7 @@ function bindStudio(pane, job) {
     const { q } = findQuestion(job, el.getAttribute('data-q-id'));
     if (!q) return;
     const field = el.dataset.field;
+    if (el.dataset.action === 'edit' && field === 'difficulty') return;
     if (el.dataset.action === 'edit') {
       q[field] = field === 'estimatedMinutes' ? Number(el.value) : el.value;
     } else if (el.dataset.action === 'edit-point') {

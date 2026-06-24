@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str | None = None
     SMTP_FROM: str = "hr@interviehire.com"
 
+    # Mailgun HTTP API (used in production — cloud hosts like Railway block SMTP ports).
+    # When MAILGUN_API_KEY + MAILGUN_DOMAIN are set, mail is sent over HTTPS via Mailgun
+    # (preserving the iCal invite); otherwise it falls back to SMTP (local dev).
+    MAILGUN_API_KEY: str | None = None
+    MAILGUN_DOMAIN: str | None = None
+    MAILGUN_BASE_URL: str = "https://api.mailgun.net"
+
     # Google OAuth 2.0 Credentials
     GOOGLE_CLIENT_ID: str | None = None
     GOOGLE_CLIENT_SECRET: str | None = None

@@ -10,7 +10,7 @@ import { escapeHTML } from './escape.js';
 import { AppState } from './state.js';
 import { filterCandidatesByDateRange } from './render-views.js';
 import { soundEngine } from './sound.js';
-import { isApiMode, apiFetchCandidateReport } from './api.js';
+import { isApiMode, apiFetchCandidateReport, apiFetchTestReport } from './api.js';
 
 const DIMENSIONS = ['Correctness', 'Depth', 'Clarity', 'Communication', 'Role alignment'];
 
@@ -171,10 +171,45 @@ export function buildSampleCandidateReport(candidate, job) {
   };
 }
 
-const daUi = { selectedId: null, openAnswerId: null, showAllDims: false, openDimKey: null };
+const daUi = { selectedId: null, openAnswerId: null, showAllDims: false, openDimKey: null, testOpen: false };
 
 // Live (api mode) report cache: candidateId -> { state:'loading'|'ready'|'pending'|'error', report?, error? }.
 const liveReports = new Map();
+
+// "Run test interview" result cache: jobId -> { state:'loading'|'ready'|'none', report? }.
+// Test interviews use a throwaway candidate that's excluded from the roster/funnel,
+// so its report is fetched and shown separately, never added to AppState.candidates.
+const testReports = new Map();
+
+// Render the job's test-interview result as a separate, collapsible card above the
+// roster — additive only: it does not enter AppState.candidates, the roster, or the
+// stat strip, so the funnel and analytics counts are unaffected.
+function testInterviewSection(job, container) {
+  const entry = testReports.get(job.id);
+  if (!entry) {
+    testReports.set(job.id, { state: 'loading' });
+    apiFetchTestReport(job.id)
+      .then((rep) => testReports.set(job.id, rep ? { state: 'ready', report: rep } : { state: 'none' }))
+      .catch(() => testReports.set(job.id, { state: 'none' }))
+      .finally(() => { if (AppState.activeJobId === job.id && !daUi.selectedId) renderDeepAnalysisPane(job, container); });
+    return '';
+  }
+  if (entry.state !== 'ready') return '';
+  const rep = entry.report;
+  const band = scoreColor(rep.overallScore);
+  const open = daUi.testOpen;
+  return `
+    <div class="da-test-card" style="border:1px solid rgba(129,140,248,.35);background:rgba(129,140,248,.06);border-radius:12px;margin:0 0 18px;overflow:hidden;">
+      <div data-action="toggle-test" role="button" tabindex="0" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;">
+        <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#a5b4fc;border:1px solid rgba(129,140,248,.4);border-radius:5px;padding:2px 6px;">TEST</span>
+        <span style="font-weight:600;color:#e7e7ea;">Last test interview result</span>
+        <span style="margin-left:auto;font-weight:700;color:${band};">${rep.overallScore}</span>
+        <button data-action="refresh-test" title="Refresh test report" style="background:none;border:none;color:#9a9a9a;cursor:pointer;font-size:14px;padding:2px 4px;line-height:1;">↻</button>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9a9a9a" stroke-width="2" style="transform:rotate(${open ? 90 : 0}deg);transition:transform .15s;"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      ${open ? `<div style="padding:0 14px 14px;">${functionalReportBody(rep)}</div>` : ''}
+    </div>`;
+}
 
 const hasFunctional = (c) => c.interviewStatus === 'Completed' && Number.isFinite(c.interviewScore);
 const hasResume = (c) => !!c.resumeAnalysis || c.matchScore != null;
@@ -215,12 +250,16 @@ const initials = (name) => (name || '?').split(/\s+/).map((w) => w[0]).slice(0, 
 
 export function renderDeepAnalysisPane(job, container) {
   if (!job || !container) return;
+  const apiLive = isApiMode() && !!job._backend;
+  // The test-interview result renders above the roster (api mode only). It's fetched
+  // and cached separately so it never affects the roster or the stat strip below.
+  const testHTML = apiLive ? testInterviewSection(job, container) : '';
   const entries = rosterCandidates(job).map(rosterEntry)
     .sort((a, b) => (b.report.overallScore ?? -1) - (a.report.overallScore ?? -1));
-  if (!entries.length) { container.innerHTML = `<div class="da-intel">${emptyState(isApiMode() && !!job._backend)}</div>`; return; }
+  if (!entries.length) { container.innerHTML = `<div class="da-intel">${testHTML}${emptyState(apiLive)}</div>`; bind(container, job); return; }
 
   const selected = daUi.selectedId && entries.find((e) => e.candidate.id === daUi.selectedId);
-  if (!selected) { container.innerHTML = `<div class="da-intel">${rosterMarkup(job, entries)}</div>`; bind(container, job); return; }
+  if (!selected) { container.innerHTML = `<div class="da-intel">${testHTML}${rosterMarkup(job, entries)}</div>`; bind(container, job); return; }
   renderDetail(job, container, selected.candidate);
 }
 
@@ -518,6 +557,8 @@ function bind(container, job) {
     else if (action === 'back') { daUi.selectedId = null; daUi.openDimKey = null; daUi.showAllDims = false; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'open-report') { soundEngine.playClick(); const cid = el.dataset.cid; import('./report-page.js').then((m) => m.openCandidateReportPage && m.openCandidateReportPage(cid)); }
     else if (action === 'toggle-answer') { const a = el.dataset.aid; daUi.openAnswerId = daUi.openAnswerId === a ? null : a; daUi.openDimKey = null; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
+    else if (action === 'toggle-test') { daUi.testOpen = !daUi.testOpen; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
+    else if (action === 'refresh-test') { testReports.delete(job.id); soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'toggle-dims') { daUi.showAllDims = !daUi.showAllDims; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'toggle-dim') { const k = `${el.dataset.aid}::${el.dataset.dim}`; daUi.openDimKey = daUi.openDimKey === k ? null : k; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
   };

@@ -1,14 +1,17 @@
 import type { NextConfig } from 'next';
 
-// The candidate room is a fully client-rendered SPA (no API routes, no
-// middleware, no server features) — it talks to the engine API from the
-// browser. Static export means Vercel ships plain files on its CDN with NO
-// serverless function, which sidesteps the monorepo function-tracing bug
-// (`noop.js` → cannot find next/dist/.../server.runtime.prod.js).
 const nextConfig: NextConfig = {
-  output: 'export',
-  images: { unoptimized: true },
-  transpilePackages: ['@interviehire/shared', '@convai/web-sdk']
+  transpilePackages: ['@interviehire/shared'],
+  // The candidate room moved from /interview to /interviewcandidateroom. Keep the
+  // old paths working (emailed invite links, bookmarks, in-flight local sessions)
+  // by redirecting them to the new route. The engine API namespace (/api/interview)
+  // is unaffected — these are page routes only.
+  async redirects() {
+    return [
+      { source: '/interview', destination: '/interviewcandidateroom', permanent: false },
+      { source: '/interview/:path*', destination: '/interviewcandidateroom/:path*', permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

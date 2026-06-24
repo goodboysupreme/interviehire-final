@@ -73,6 +73,10 @@ export default function Interview() {
   const [report, setReport] = useState<any>(null);
   const [avatarCapture, setAvatarCapture] = useState<'off' | 'on' | 'error'>('off');
   const [avatarCaptureMsg, setAvatarCaptureMsg] = useState('');
+  // Per-job interview settings + branding, synced from the recruiter dashboard.
+  const [interviewSettings, setInterviewSettings] = useState<any>(null);
+  const [branding, setBranding] = useState<{ name?: string; primaryColor?: string; logoUrl?: string } | null>(null);
+  const [startError, setStartError] = useState('');
 
   const avatarSrc = useMemo(() => withPixelStreamingParams(AVATAR_URL), []);
 
@@ -85,6 +89,26 @@ export default function Interview() {
     const queryId = params.get('sessionId') || params.get('session');
     if (queryId) setSessionId(queryId);
   }, []);
+
+  // Load per-job interview settings + company branding for a real session. Best
+  // effort: on any failure we stay permissive so the interview still runs.
+  useEffect(() => {
+    if (!sessionId || sessionId === 'demo-session') return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/interview/sessions/${sessionId}`);
+        if (!res.ok) return;
+        const s = await res.json();
+        if (!alive) return;
+        setInterviewSettings(s?.settings || {});
+        if (s?.company) setBranding({ name: s.company.name, primaryColor: s.company.primaryColor, logoUrl: s.company.logoUrl });
+      } catch {
+        /* permissive on error */
+      }
+    })();
+    return () => { alive = false; };
+  }, [sessionId]);
 
   // --- Dynamic questions loading from session ---
   useEffect(() => {
@@ -234,7 +258,18 @@ export default function Interview() {
         // Engage the engine's proctoring engine (gaze/face/object/tab/etc) and
         // its integrity scoring — detection is gated until this is called.
         startProctoringSession();
-        await fetch(`${API_URL}/api/interview/sessions/${sessionId}/start`, { method: 'POST' });
+        // Honor the recruiter's interview settings enforced server-side at /start
+        // (disabled / late / reattempt / CV required). On a block, surface the
+        // message and stop instead of proceeding into a broken room.
+        const startRes = await fetch(`${API_URL}/api/interview/sessions/${sessionId}/start`, { method: 'POST' });
+        if (!startRes.ok) {
+          let msg = 'This interview could not be started.';
+          try { const j = await startRes.json(); if (j?.error) msg = j.error; } catch { /* keep default */ }
+          setStartError(msg);
+          try { endProctoringSession(); } catch { /* noop */ }
+          setRecordingStatus('');
+          return;
+        }
         startRecording();
         // Begin transcript capture: mark t=0 and stream candidate speech via the
         // browser Web Speech API (the interviewer text is captured from the
@@ -336,9 +371,39 @@ export default function Interview() {
   const clock = `${mm}:${ss}`;
   const question = questions[questionIndex] || { text: 'No questions loaded.', tag: 'Interview', hint: 'Please wait.' };
 
+  const isMobileDevice = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  const mobileBlocked = !!interviewSettings && interviewSettings.allowMobile === false && isMobileDevice;
+  const wl = !!(interviewSettings && interviewSettings.whiteLabel && branding);
+
+  if (mobileBlocked) {
+    return (
+      <>
+        <style>{roomStyles}</style>
+        <div className="gate">
+          <div className="gate-card">
+            <p className="gate-eyebrow">Desktop required</p>
+            <h1 className="gate-title">Please switch to a desktop</h1>
+            <p className="gate-sub">This interview must be taken on a desktop or laptop. Open this link on a computer to continue.</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <style>{roomStyles}</style>
+
+      {/* Interview blocked by the recruiter's settings (disabled / late / reattempt / CV) */}
+      {startError && (
+        <div className="gate">
+          <div className="gate-card">
+            <p className="gate-eyebrow">Interview unavailable</p>
+            <h1 className="gate-title">Can&apos;t start this interview</h1>
+            <p className="gate-sub">{startError}</p>
+          </div>
+        </div>
+      )}
 
       {/* Pre-interview permission gate */}
       {!calibration && !permissionsReadyForCalibration && (
@@ -418,9 +483,9 @@ export default function Interview() {
       <div className="room">
         <header className="topbar">
           <div className="brand">
-            <div className="logo">✦</div>
+            <div className="logo">{wl && branding?.logoUrl ? <img src={branding.logoUrl} alt="" style={{ height: 24, borderRadius: 6 }} /> : '✦'}</div>
             <div className="brand-name">
-              Intervie<span>Hire</span>
+              {wl ? branding?.name : <>Intervie<span>Hire</span></>}
             </div>
             <div className="room-label">AI Interview Room</div>
           </div>
@@ -446,6 +511,35 @@ export default function Interview() {
             <span className="timer">{clock}</span>
           </div>
         </header>
+
+        {/* Prominent prompt: the interviewer's voice can only be recorded if the
+            candidate shares the screen/tab WITH audio (browsers can't capture
+            device audio silently). Shown until capture is active. */}
+        {calibration && avatarCapture !== 'on' && (
+          <div
+            onClick={enableAvatarCapture}
+            style={{
+              position: 'fixed', top: 64, left: '50%', transform: 'translateX(-50%)', zIndex: 9000,
+              display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+              padding: '12px 18px', borderRadius: 12, maxWidth: '92vw',
+              background: avatarCapture === 'error' ? 'linear-gradient(135deg,#7f1d1d,#b91c1c)' : 'linear-gradient(135deg,#0e7490,#0891b2)',
+              color: '#fff', boxShadow: '0 10px 30px rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.18)',
+              animation: 'ihpulse 1.6s ease-in-out infinite',
+            }}
+            title="Record the interviewer's voice"
+          >
+            <style>{'@keyframes ihpulse{0%,100%{box-shadow:0 8px 24px rgba(8,145,178,0.35)}50%{box-shadow:0 8px 36px rgba(8,145,178,0.75)}}'}</style>
+            <span style={{ fontSize: 22 }}>🎧</span>
+            <div style={{ lineHeight: 1.35 }}>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>
+                {avatarCapture === 'error' ? 'Interviewer audio not captured — click to retry' : 'Click to record the interviewer’s voice'}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.9 }}>
+                {avatarCaptureMsg || 'Pick “Entire Screen” or this tab and CHECK “Share system/tab audio”.'}
+              </div>
+            </div>
+          </div>
+        )}
 
         <main className="content">
           <section className="avatar-panel">

@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Talent Finder · IntervieHire</title>
+<!--
+  Talent Finder — AI Candidate Sourcing (compliant).
+  Self-contained page (no build step) so it doesn't touch the dashboard's tab
+  internals. Reuses the existing login cookie. Open at:
+     /talent-finder.html?jobId=<JOB_UUID>
+  API base auto-detects localhost:8002/api; override with ?api=<url>.
+  To wire it as an in-job-role tab later, add a link/button in the job detail:
+     <a href="/talent-finder.html?jobId=${job.id}">Talent Finder</a>
+-->
+<style>
+  :root{--bg:#070b14;--card:#0d1426;--line:rgba(255,255,255,.10);--muted:#93a4c4;--fg:#e7eefc;--cyan:#22d3ee;--teal:#0e7490;--green:#34d399;--red:#f87171;--amber:#fbbf24}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 'Segoe UI',system-ui,sans-serif}
+  a{color:var(--cyan)}
+  .wrap{max-width:1280px;margin:0 auto;padding:20px}
+  header.top{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  header.top .logo{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,#0e7490,#22d3ee);font-weight:800}
+  h1{font-size:20px;margin:0}.sub{color:var(--muted);font-size:12px}
+  .grid{display:grid;grid-template-columns:340px 1fr;gap:16px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 12px}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  input,textarea,select{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:9px;color:var(--fg);padding:9px 11px;font:inherit;outline:none}
+  textarea{resize:vertical;min-height:60px}
+  .row{display:flex;gap:8px}.row>*{flex:1}
+  .btn{cursor:pointer;border:none;border-radius:10px;padding:11px 16px;font-weight:700;font-size:13px;background:linear-gradient(135deg,#22d3ee,#34d399);color:#04201c}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.ghost{background:rgba(255,255,255,.06);color:var(--fg);border:1px solid var(--line)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+  .src{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:13px;border-bottom:1px dashed var(--line)}
+  .src .meta{margin-left:auto;font-size:11px;color:var(--muted)}
+  .pill{display:inline-block;font-size:10px;font-weight:700;border-radius:999px;padding:2px 8px}
+  .pill.ok{background:rgba(52,211,153,.15);color:var(--green)}.pill.no{background:rgba(248,113,113,.15);color:var(--red)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.05em}
+  tr.cand{cursor:pointer}tr.cand:hover{background:rgba(255,255,255,.03)}
+  .score{font-weight:800}.s-strong{color:var(--green)}.s-good{color:var(--cyan)}.s-mid{color:var(--amber)}.s-weak{color:var(--muted)}
+  .tag{display:inline-block;background:rgba(34,211,238,.12);color:var(--cyan);border-radius:6px;padding:1px 7px;margin:1px;font-size:11px}
+  .tag.miss{background:rgba(248,113,113,.12);color:var(--red)}
+  .flag{color:var(--amber);font-size:11px}
+  .progress{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+  .step{padding:4px 10px;border-radius:999px;border:1px solid var(--line)}.step.done{color:var(--green);border-color:rgba(52,211,153,.4)}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:min(560px,96vw);background:linear-gradient(180deg,#0c1426,#080d1a);border-left:1px solid var(--line);box-shadow:-20px 0 60px rgba(0,0,0,.5);padding:22px;overflow:auto;transform:translateX(110%);transition:transform .25s}
+  .drawer.open{transform:none}
+  .drawer .x{float:right;cursor:pointer;color:var(--muted);font-size:20px}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:13px}
+  .bar{height:7px;border-radius:5px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:3px}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,#22d3ee,#34d399)}
+  .note{font-size:12px;color:var(--muted);background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:9px;padding:9px;margin-top:8px}
+  .err{color:var(--red)}.muted{color:var(--muted)}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#0d1426;border:1px solid var(--line);border-radius:10px;padding:10px 16px;font-size:13px;z-index:50}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="logo">✦</div>
+    <div><h1>Talent Finder <span class="sub">· compliant AI sourcing</span></h1>
+      <div class="sub" id="jobline">No job linked — fill the brief below.</div></div>
+    <button class="btn ghost sm" style="margin-left:auto" onclick="loadSources(true)">⚙ Sources</button>
+  </header>
+
+  <div class="grid">
+    <!-- LEFT: brief + sources -->
+    <div>
+      <div class="card">
+        <h2>Search brief</h2>
+        <label>Job title</label><input id="title" placeholder="e.g. B2B SaaS Sales Executive"/>
+        <label>Location</label><input id="location" placeholder="e.g. Bangalore (blank = any)"/>
+        <div class="row"><div><label>Exp min</label><input id="expMin" type="number" min="0"/></div>
+          <div><label>Exp max</label><input id="expMax" type="number" min="0"/></div></div>
+        <label>Must-have skills (comma separated)</label><input id="must" placeholder="B2B, SaaS, CRM, outbound prospecting"/>
+        <label>Good-to-have skills</label><input id="good" placeholder="Salesforce, negotiation"/>
+        <label>Exclude keywords</label><input id="exclude" placeholder="intern, fresher"/>
+        <label>JD text (optional, improves semantic match)</label><textarea id="jd" placeholder="Paste the JD…"></textarea>
+      </div>
+
+      <div class="card">
+        <h2>Sources</h2>
+        <div id="sourcePicker" class="muted">Loading sources…</div>
+        <label style="margin-top:12px">Manual paste (one name or profile URL per line)</label>
+        <textarea id="manual" placeholder="Asha Rao&#10;https://example.com/p/jdoe"></textarea>
+        <label>Import CSV (recruiter export — columns: full_name,email,current_title,skills,…)</label>
+        <input id="csv" type="file" accept=".csv"/>
+        <div id="csvNote" class="note" style="display:none"></div>
+        <label>Max candidates</label><input id="maxc" type="number" value="50"/>
+        <button class="btn" style="width:100%;margin-top:14px" id="runBtn" onclick="runSearch()">🔎 Find candidates</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: progress + results -->
+    <div>
+      <div class="card" id="progressCard" style="display:none">
+        <h2>Search progress</h2>
+        <div class="progress" id="steps"></div>
+        <div class="note" id="searchNote" style="display:none"></div>
+      </div>
+      <div class="card">
+        <h2 style="display:flex;align-items:center">Results <span id="rcount" class="muted" style="margin-left:8px;font-size:12px"></span>
+          <button class="btn ghost sm" style="margin-left:auto" onclick="exportCsv()">⬇ Export CSV</button></h2>
+        <div id="results" class="muted">Run a search to see ranked candidates.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="drawer" id="drawer"><span class="x" onclick="closeDrawer()">✕</span><div id="drawerBody"></div></div>
+<div id="toast"></div>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const JOB_ID = qs.get('jobId') || '';
+const API = (qs.get('api') || (location.protocol+'//'+location.hostname+':8002/api')).replace(/\/$/,'');
+let SOURCES = [];           // available source descriptors
+let CSV_ROWS = [];          // parsed rows from /import/csv
+let LAST_RESULTS = [];      // for export + drawer
+let LAST_BRIEF = {};
+
+function toast(m,err){const t=document.getElementById('toast');t.className='toast';t.style.color=err?'#f87171':'#e7eefc';t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',3200);}
+async function api(path,opts={}){const r=await fetch(API+path,{credentials:'include',...opts});if(!r.ok){let d={};try{d=await r.json()}catch{}throw new Error(d.detail||('HTTP '+r.status));}return r.json();}
+const list = s => (s||'').split(/[,\n;]/).map(x=>x.trim()).filter(Boolean);
+
+async function loadJob(){
+  if(!JOB_ID) return;
+  try{const j=await api('/jobs/'+JOB_ID);
+    document.getElementById('jobline').textContent='Job: '+(j.role_name||j.title||JOB_ID);
+    if(j.role_name||j.title) document.getElementById('title').value=j.role_name||j.title;
+    if(j.location) document.getElementById('location').value=j.location;
+    if(j.description) document.getElementById('jd').value=j.description;
+  }catch(e){document.getElementById('jobline').textContent='(could not load job: '+e.message+')';}
+}
+
+async function loadSources(showPanel){
+  try{const d=await api('/talent-finder/sources');SOURCES=d.sources||[];
+    const def=['internal_db','resume_db','manual_import','uploaded_csv'];
+    document.getElementById('sourcePicker').innerHTML = SOURCES.map(s=>`
+      <div class="src">
+        <input type="checkbox" id="src_${s.source_type}" ${s.available?'':'disabled'} ${(s.available&&def.includes(s.source_type))?'checked':''}/>
+        <label for="src_${s.source_type}" style="margin:0;color:${s.available?'#e7eefc':'#6b7a99'}">${s.source_name}</label>
+        <span class="meta">${s.is_enabled?'<span class="pill ok">enabled</span>':'<span class="pill no">requires permission</span>'}</span>
+      </div>`).join('');
+    if(showPanel){const unavail=SOURCES.filter(s=>!s.available);toast('Sources loaded. '+unavail.length+' need API access / permission / import.');}
+  }catch(e){document.getElementById('sourcePicker').innerHTML='<span class="err">Login required (open the dashboard & sign in first). '+e.message+'</span>';}
+}
+
+document.getElementById('csv').addEventListener('change',async e=>{
+  const f=e.target.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);
+  try{const d=await api('/talent-finder/import/csv',{method:'POST',body:fd});CSV_ROWS=d.rows||[];
+    const n=document.getElementById('csvNote');n.style.display='block';n.textContent=`Imported ${d.imported} rows (${d.skipped} skipped). They'll be included as the "Uploaded CSV" source.`;
+    const cb=document.getElementById('src_uploaded_csv');if(cb)cb.checked=true;
+    toast('CSV imported: '+d.imported+' candidates');
+  }catch(err){toast('CSV import failed: '+err.message,true);}
+});
+
+function selectedSources(){return SOURCES.filter(s=>{const c=document.getElementById('src_'+s.source_type);return c&&c.checked;}).map(s=>s.source_type);}
+function setSteps(active){const order=['searching','deduping','ranking','done'];const labels={searching:'Searching sources',deduping:'Removing duplicates',ranking:'Ranking candidates',done:'Done'};
+  document.getElementById('steps').innerHTML=order.map(k=>`<span class="step ${order.indexOf(k)<=order.indexOf(active)?'done':''}">${labels[k]}</span>`).join('');}
+
+async function runSearch(){
+  const btn=document.getElementById('runBtn');btn.disabled=true;
+  document.getElementById('progressCard').style.display='block';setSteps('searching');
+  const body={jobRoleId:JOB_ID||undefined,title:document.getElementById('title').value,
+    location:document.getElementById('location').value,
+    experienceRange:{min:parseFloat(document.getElementById('expMin').value)||undefined,max:parseFloat(document.getElementById('expMax').value)||undefined},
+    mustHaveSkills:list(document.getElementById('must').value),goodToHaveSkills:list(document.getElementById('good').value),
+    excludeKeywords:list(document.getElementById('exclude').value),jdText:document.getElementById('jd').value,
+    sources:selectedSources(),maxCandidates:parseInt(document.getElementById('maxc').value)||50,
+    csvRows:CSV_ROWS,manualProfiles:list(document.getElementById('manual').value)};
+  try{
+    const r=await api('/talent-finder/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    setSteps('done');
+    const note=document.getElementById('searchNote');
+    const notes=Object.entries(r.source_notes||{}).filter(([k,v])=>v&&v!=='ok');
+    if(r.no_results_hint||notes.length){note.style.display='block';
+      note.innerHTML=(r.no_results_hint?('<b>'+r.no_results_hint+'</b><br>'):'')+notes.map(([k,v])=>`<div class="muted">• ${k}: ${v}</div>`).join('');}
+    else note.style.display='none';
+    await loadResults(r.searchId);
+  }catch(e){toast('Search failed: '+e.message,true);setSteps('searching');}
+  btn.disabled=false;
+}
+
+function scoreClass(s){return s>=75?'s-strong':s>=55?'s-good':s>=40?'s-mid':'s-weak';}
+async function loadResults(searchId){
+  const d=await api('/talent-finder/search/'+searchId+'/results');LAST_RESULTS=d.results||[];LAST_BRIEF=d.brief||{};
+  document.getElementById('rcount').textContent='('+d.count+')';
+  if(!LAST_RESULTS.length){document.getElementById('results').innerHTML='<span class="muted">No candidates. Broaden location, reduce must-haves, or import a list.</span>';return;}
+  document.getElementById('results').innerHTML=`<table><thead><tr>
+    <th>Candidate</th><th>Role</th><th>Location</th><th>Exp</th><th>Source</th><th>Fit</th><th>Must-have</th><th>Risk</th><th>Outreach</th><th></th></tr></thead>
+    <tbody>${LAST_RESULTS.map((c,i)=>{const fb=c.fit_breakdown||{};const mh=(fb.matchedMustHaves||[]).length, mt=mh+(fb.missingMustHaves||[]).length;
+      return `<tr class="cand" onclick="openDrawer(${i})">
+      <td><b>${esc(c.full_name)}</b></td><td>${esc(c.current_title||'—')}</td><td>${esc(c.location||'—')}</td>
+      <td>${c.years_of_experience??'—'}</td><td><span class="tag">${esc(c.source_type||'')}</span></td>
+      <td class="score ${scoreClass(c.fit_score)}">${c.fit_score??'—'}</td>
+      <td>${mh}/${mt||0}</td><td class="flag">${(c.risk_flags||[]).length?('⚠ '+c.risk_flags.length):''}</td>
+      <td class="muted">${c.outreach_status||'none'}</td>
+      <td><button class="btn sm ghost" onclick="event.stopPropagation();shortlist('${c.id}')">★</button></td></tr>`;}).join('')}
+    </tbody></table>`;
+}
+
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
+function openDrawer(i){const c=LAST_RESULTS[i];const fb=c.fit_breakdown||{};
+  const bars=[['Must-have',fb.mustHaveScore],['Experience',fb.experienceScore],['Title/semantic',fb.semanticScore],['Location',fb.locationScore],['Good-to-have',fb.goodToHaveScore]];
+  document.getElementById('drawerBody').innerHTML=`
+    <div class="sub">Candidate</div><h1 style="margin:2px 0 2px">${esc(c.full_name)}</h1>
+    <div class="muted">${esc(c.current_title||'')} ${c.current_company?('· '+esc(c.current_company)):''} · ${esc(c.location||'')}</div>
+    <div class="kv"><span>Fit score</span><b class="${scoreClass(c.fit_score)}">${c.fit_score} (${esc(fb.recommendation||'')})</b></div>
+    <div class="card" style="margin-top:12px"><h2>Fit breakdown</h2>
+      ${bars.map(([l,v])=>`<div style="margin:6px 0"><div class="kv" style="border:0;padding:2px 0"><span>${l}</span><span>${v??0}</span></div><div class="bar"><i style="width:${Math.max(0,Math.min(100,v||0))}%"></i></div></div>`).join('')}
+      <div class="kv"><span>Risk penalty</span><span class="flag">-${fb.riskPenalty||0}</span></div></div>
+    <div class="card"><h2>Skills</h2>
+      <div>${(fb.matchedMustHaves||[]).map(s=>`<span class="tag">✓ ${esc(s)}</span>`).join('')}
+      ${(fb.matchedGoodToHaves||[]).map(s=>`<span class="tag">+ ${esc(s)}</span>`).join('')}
+      ${(fb.missingMustHaves||[]).map(s=>`<span class="tag miss">✕ ${esc(s)}</span>`).join('')}</div></div>
+    ${(c.risk_flags||[]).length?`<div class="note flag">⚠ ${c.risk_flags.map(esc).join('<br>⚠ ')}</div>`:''}
+    <div class="card"><h2>AI recommendation</h2><div>${esc(c.fit_reasoning||'')}</div></div>
+    <div class="card"><h2>Sources (transparency)</h2>${(c.sources||[]).map(s=>`<div class="kv"><span>${esc(s.source_name||s.source_type)}</span><span class="pill ${s.source_permission_status==='requires_permission'?'no':'ok'}">${esc(s.source_permission_status||'')}</span></div>`).join('')||'<span class="muted">—</span>'}</div>
+    <div class="card"><h2>Outreach (draft — you approve before sending)</h2>
+      <textarea id="outMsg" placeholder="Click Generate…">${esc(c._outreach||'')}</textarea>
+      <div class="row" style="margin-top:8px"><button class="btn sm" onclick="genOutreach('${c.id}',${i})">✨ Generate</button>
+      <button class="btn sm ghost" onclick="optOut('${c.id}')">Opt-out</button></div></div>
+    <div class="row" style="margin-top:6px">
+      <button class="btn sm" onclick="shortlist('${c.id}')">★ Shortlist</button>
+      <button class="btn sm ghost" onclick="reject('${c.id}')">Reject</button>
+      <button class="btn sm ghost" onclick="moveToPipeline('${c.id}')">→ AI interview</button></div>`;
+  document.getElementById('drawer').classList.add('open');
+}
+function closeDrawer(){document.getElementById('drawer').classList.remove('open');}
+async function genOutreach(id,i){try{const d=await api('/talent-finder/candidates/'+id+'/generate-outreach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief:LAST_BRIEF})});document.getElementById('outMsg').value=d.message;LAST_RESULTS[i]._outreach=d.message;toast('Draft generated — review before sending.');}catch(e){toast(e.message,true);}}
+async function shortlist(id){try{await api('/talent-finder/candidates/'+id+'/shortlist',{method:'POST'});toast('Shortlisted');}catch(e){toast(e.message,true);}}
+async function reject(id){try{await api('/talent-finder/candidates/'+id+'/reject',{method:'POST'});toast('Rejected');closeDrawer();}catch(e){toast(e.message,true);}}
+async function optOut(id){try{await api('/talent-finder/candidates/'+id+'/opt-out',{method:'POST'});toast('Marked opted-out');}catch(e){toast(e.message,true);}}
+async function moveToPipeline(id){try{const d=await api('/talent-finder/candidates/'+id+'/move-to-pipeline',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jobId:JOB_ID||undefined})});toast('Moved to interview pipeline (applicant '+d.applicantId.slice(0,8)+'…)');}catch(e){toast(e.message,true);}}
+function exportCsv(){if(!LAST_RESULTS.length){toast('Nothing to export',true);return;}
+  const cols=['full_name','current_title','current_company','location','years_of_experience','email','source_type','fit_score','source_permission_status'];
+  const rows=[cols.join(',')].concat(LAST_RESULTS.map(c=>cols.map(k=>JSON.stringify(c[k]==null?'':c[k])).join(',')));
+  const blob=new Blob([rows.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='talent-finder-results.csv';a.click();}
+
+loadJob();loadSources(false);
+</script>
+</body>
+</html>

@@ -9,6 +9,7 @@
 
 import { createTopic, createQuestionBlueprint, toFunctionalParameters, toScreeningQuestions } from './blueprint-engine.js';
 import { request, API_BASE, apiLogin, apiSignup, apiMe, apiLogout, isAuthed, clearAuthed } from '../auth-client.js';
+import { defaultInterviewSettings } from './state.js';
 
 // Auth + HTTP primitives live in ../auth-client.js (dependency-free so the lean
 // /login + /signup pages can reuse them). Re-export for existing callers here.
@@ -93,6 +94,53 @@ export async function apiFetchCandidateReport(applicantId) {
   const data = await request(`/jobs/applicants/${applicantId}/functional-report`);
   return mapFullReportToCandidateReport(data);
 }
+
+// Interview Analysis tab source: compact summaries for every applicant of a job
+// whose AI interview has been EVALUATED (score, recommendation, proctoring), most
+// recent first. The backend reconciles + persists autonomously, so this reflects
+// reports as soon as candidates finish. Each row's full report opens via
+// apiFetchCandidateReport(). Returns a camelCase list (or [] when none yet).
+export async function apiFetchInterviewAnalysis(jobId) {
+  const data = await request(`/jobs/${jobId}/interview-analysis`);
+  const list = Array.isArray(data) ? data : (data?.results || data?.data || []);
+  return list.map((r = {}) => ({
+    id: r.applicant_id,
+    name: r.name || '',
+    email: r.email || '',
+    status: r.status || 'EVALUATED',
+    overallScore: r.overall_score ?? null,
+    recommendation: r.recommendation || null,
+    summary: r.summary || '',
+    questionCount: r.question_count ?? 0,
+    proctoringSeverity: r.proctoring_severity || null,
+    cheatProbability: r.cheat_probability
+      ? r.cheat_probability.charAt(0).toUpperCase() + r.cheat_probability.slice(1)
+      : null,
+    violationCount: r.violation_count ?? 0,
+    hasStructured: !!r.has_structured,
+    reportUrl: r.report_url || null,
+    evaluatedAt: r.evaluated_at || null,
+    source: r.source || null,
+  }));
+}
+
+// Deep Analysis: the "Run test interview" result for a job. Test interviews use a
+// throwaway candidate that is (by design) kept out of the roster, funnel and
+// analytics, so this fetches just its evaluation. Returns the report or null
+// until the engine has scored the test interview.
+export async function apiFetchTestReport(jobId) {
+  const data = await request(`/jobs/${jobId}/test-report`);
+  if (!data || !data.exists || !data.evaluated) return null;
+  const report = data.report;
+  return report && Array.isArray(report.questionBreakdown) ? report : null;
+}
+
+export async function apiFetchUsageStats(params = {}) {
+  const qs = new URLSearchParams();
+  if (params.date_from) qs.set('date_from', params.date_from);
+  if (params.date_to) qs.set('date_to', params.date_to);
+  return request(`/usage/stats${qs.toString() ? `?${qs.toString()}` : ''}`);
+}
 // Dev launcher: create a throwaway test interview from the job's blueprint and
 // return its session id (= the test applicant id) for the candidate room.
 export async function apiCreateTestSession(jobId) {
@@ -149,6 +197,32 @@ export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'sc
 export async function apiUpdateApplicant(applicantId, patch) {
   const data = await request(`/jobs/applicants/${applicantId}`, { method: 'PATCH', body: patch });
   return mapApplicantOutToCandidate(data);
+}
+
+export function applicantStagePatch(targetStatus) {
+  const status = String(targetStatus || '').toLowerCase();
+  if (status === 'resume') {
+    return { decision: null, screening_status: null, functional_status: null };
+  }
+  if (status === 'screening') {
+    return { decision: 'shortlisted', screening_status: 'pending', functional_status: null };
+  }
+  if (status === 'functional') {
+    return { decision: 'shortlisted', functional_status: 'pending' };
+  }
+  if (status === 'hired') {
+    return { decision: 'hired' };
+  }
+  if (status === 'rejected') {
+    return { decision: 'rejected' };
+  }
+  return {};
+}
+
+export async function apiMoveApplicantStage(applicantId, targetStatus) {
+  const patch = applicantStagePatch(targetStatus);
+  if (!Object.keys(patch).length) return null;
+  return apiUpdateApplicant(applicantId, patch);
 }
 
 // Fetch the real parsed resume text the backend has on file for this applicant.
@@ -219,6 +293,7 @@ function mapJobOutToJob(j = {}) {
       recruiterScreening: { enabled: !!j.recruiter_screening_enabled },
       functionalInterview: { enabled: !!j.functional_interview_enabled },
     },
+    interviewSettings: j.interview_settings ? { ...defaultInterviewSettings(), ...j.interview_settings } : undefined,
     pipeline: j.pipeline || { total: 0, resume: 0, screening: 0, functional: 0 },
     _backend: true,
   };
@@ -230,22 +305,20 @@ function mapScreeningParamsIn(sp) {
   if (!sp || typeof sp !== 'object') return [];
   return Object.entries(sp).map(([category, params]) => ({
     category: category.charAt(0).toUpperCase() + category.slice(1),
-    params: arr(params).map((p) => ({ name: p.parameter || p.name || '', required: !!p.required, flexibility: '', preferredResponse: p.preferred_response || p.preferredResponse || '' })),
+    params: arr(params).map((p) => ({ name: p.parameter || p.name || '', required: !!p.required, flexibility: p.flexibility || '', preferredResponse: p.preferred_response || p.preferredResponse || '' })),
   }));
 }
 
-// Dashboard screeningParams → backend screening_parameters (reverse of
-// mapScreeningParamsIn). Without this the screening grid — including recruiter
-// custom params — only lived in localStorage and never reached the backend.
-function mapScreeningParamsOut(screeningParams) {
+// Inverse of mapScreeningParamsIn: dashboard [{category, params:[{name,required,
+// flexibility,preferredResponse}]}] → backend {category:[{parameter,required,
+// flexibility,preferred_response}]}. Lowercase keys so the round-trip is stable.
+function mapScreeningParamsOut(params) {
   const out = {};
-  arr(screeningParams).forEach((cat) => {
-    if (!cat || !cat.category) return;
-    out[cat.category.toLowerCase()] = arr(cat.params).map((p) => ({
-      parameter: p.name || '',
-      preferred_response: p.preferredResponse || '',
-      required: !!p.required,
-    }));
+  arr(params).forEach((cat) => {
+    const key = String(cat.category || '').trim().toLowerCase() || 'custom';
+    out[key] = arr(cat.params)
+      .map((p) => ({ parameter: p.name || '', required: !!p.required, flexibility: p.flexibility || '', preferred_response: p.preferredResponse || '' }))
+      .filter((p) => p.parameter);
   });
   return out;
 }
@@ -291,6 +364,8 @@ function mapJobToParametersPayload(job) {
   return {
     screening_questions: toScreeningQuestions(sb),
     functional_parameters: toFunctionalParameters(fp),
+    screening_parameters: mapScreeningParamsOut(job.screeningParams),
+    ...(job.interviewSettings ? { interview_settings: job.interviewSettings } : {}),
     // scoring_config rides inside resume_parameters (a freeform JSON column) so the
     // recruiter's weights/criteria persist without a schema change.
     resume_parameters: {

@@ -1,5 +1,5 @@
 import type { CandidateResponseInput, InterviewContext, QuestionEvaluationConfig } from "./types.js";
-import { getDimensionWeights, normalizeWeights } from "./rubrics.js";
+import { DIMENSION_KEYS, getDimensionWeights, normalizeWeights } from "./rubrics.js";
 import { inferEvaluationMode } from "./scoring.js";
 
 export function buildRubricExtractionPrompt(question: QuestionEvaluationConfig): string {
@@ -61,15 +61,19 @@ export function buildAnswerEvaluationPrompt(
 
   return [
     "Evaluate the candidate response for an interview report.",
-    "Use transcript content only. Ignore audio/video behavior unless explicit structured signals are provided.",
-    "Score fairly for equivalent correct ideas, even when wording differs from the model answer.",
-    "Do not invent evidence. Keep evidence quotes short.",
+    "Use transcript content only. Do not infer tone, audio, video, face, body language, or confidence from non-text signals.",
+    "Compare against the model answer by concept, not exact wording. Give credit for equivalent correct ideas.",
+    "Penalize factual errors, contradictions, buzzwords, unsupported claims, and non-answers. Do not invent evidence. Keep evidence quotes short.",
+    `Score EVERY one of these dimensions (use these EXACT keys) from 0-100: ${Object.keys(weights).join(", ")}.`,
+    "In modelAnswerComparison, list the required model-answer concepts the candidate covered vs missed, any bonus concepts covered, and any incorrect claims.",
     "Return strict JSON only.",
     "",
     `Role: ${context.roleTitle}`,
     `Role level: ${context.roleLevel ?? "not specified"}`,
     `Interview type: ${context.interviewType}`,
     `Must-have skills: ${(context.mustHaveSkills ?? []).join(", ") || "not specified"}`,
+    `Nice-to-have skills: ${(context.niceToHaveSkills ?? []).join(", ") || "not specified"}`,
+    `Company evaluation notes: ${context.companyEvaluationNotes ?? "none"}`,
     `Question type: ${input.question.questionType}`,
     `Evaluation mode: ${mode}`,
     `Dimension weights: ${JSON.stringify(weights)}`,
@@ -115,20 +119,25 @@ export function buildFollowupEvaluationPrompt(
 }
 
 function getEvaluationJsonShape(mode: string): string {
+  const dimensionScores = Object.fromEntries(
+    DIMENSION_KEYS.map((key) => [
+      key,
+      {
+        score: 0,
+        reason: "Short reason.",
+        evidence: ["Short transcript evidence."],
+        missing: ["Important missing item."],
+      },
+    ]),
+  );
+
   const baseShape = {
     answerId: "answer id from input",
     questionId: "question id from input",
     questionOrigin: "predetermined | generated_followup",
     evaluationMode: mode,
     overallScore: 0,
-    dimensionScores: {
-      dimension_name: {
-        score: 0,
-        reason: "Short reason.",
-        evidence: ["Short transcript evidence."],
-        missing: ["Important missing item."],
-      },
-    },
+    dimensionScores,
     strengths: ["Concrete strength."],
     weaknesses: ["Concrete weakness."],
     redFlags: [

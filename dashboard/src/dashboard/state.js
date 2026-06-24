@@ -839,5 +839,22 @@ function generateJobId() {
   return id;
 }
 
+// Per-job interview settings (camelCase end-to-end: dashboard → backend JSON
+// column → engine InterviewSession.settings). Defaults mirror the modal's
+// initial toggle state. The engine treats missing values as permissive.
+function defaultInterviewSettings() {
+  return {
+    interviewEnabled: true,
+    allowMobile: false,
+    allowLate: false,
+    continueFromMiddle: true,
+    allowReattempt: false,
+    requireCv: true,
+    proctoring: true,
+    whiteLabel: false,
+    accessControl: 'link',
+  };
+}
 
-export { AppState, generateJobId };
+
+export { AppState, generateJobId, defaultInterviewSettings };

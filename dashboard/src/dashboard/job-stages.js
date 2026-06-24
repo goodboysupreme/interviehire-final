@@ -14,6 +14,7 @@
  *   resume      resume-analysis
  *   screening   recruiter-screening
  *   functional  functional-interview
+ *   interviewanalysis interview-analysis
  *   questions   questions-generator
  *   analysis    deep-analysis
  *   testinterview test-interview
@@ -24,6 +25,7 @@ export const STAGE_SLUG_TO_TAB = {
   'resume-analysis': 'resume',
   'recruiter-screening': 'screening',
   'functional-interview': 'functional',
+  'interview-analysis': 'interviewanalysis',
   'questions-generator': 'questions',
   'deep-analysis': 'analysis',
   'test-interview': 'testinterview',

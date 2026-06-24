@@ -2,85 +2,108 @@ import type { InterviewType, QuestionType } from "./types.js";
 
 export type DimensionWeights = Record<string, number>;
 
+// Canonical evaluation dimensions (sum to 100). Every interview/question type uses
+// THESE SAME KEYS so the LLM, the scoring, and the report stay consistent — only the
+// weights are "dynamically adjusted for different job roles" below.
+export const DIMENSION_KEYS = [
+  "model_answer_alignment",
+  "factual_correctness",
+  "completeness",
+  "reasoning_quality",
+  "clarity_structure",
+  "role_level_alignment",
+  "communication_quality",
+] as const;
+
 export const UNIVERSAL_DIMENSIONS: DimensionWeights = {
-  relevance: 15,
-  correctness: 20,
+  model_answer_alignment: 25,
+  factual_correctness: 20,
   completeness: 15,
-  depth: 15,
-  clarity: 15,
-  communication: 10,
-  role_alignment: 10,
+  reasoning_quality: 15,
+  clarity_structure: 10,
+  role_level_alignment: 10,
+  communication_quality: 5,
 };
 
+// Per-interview-type adjustments (same 7 keys, re-weighted for what the role values).
 export const INTERVIEW_TYPE_WEIGHTS: Record<InterviewType, DimensionWeights> = {
   technical: {
-    correctness: 30,
-    completeness: 20,
-    depth: 20,
-    clarity: 10,
-    communication: 10,
-    role_alignment: 10,
-  },
-  behavioral: {
-    relevance: 15,
-    ownership: 20,
-    impact: 20,
-    reflection: 15,
-    clarity: 15,
-    role_alignment: 15,
+    model_answer_alignment: 25,
+    factual_correctness: 25,
+    completeness: 15,
+    reasoning_quality: 15,
+    clarity_structure: 8,
+    role_level_alignment: 7,
+    communication_quality: 5,
   },
   system_design: {
-    requirements_understanding: 15,
-    architecture: 20,
-    tradeoffs: 20,
-    scalability: 15,
-    failure_handling: 15,
-    communication: 15,
+    model_answer_alignment: 15,
+    factual_correctness: 15,
+    completeness: 15,
+    reasoning_quality: 30, // tradeoffs / architecture reasoning dominates
+    clarity_structure: 12,
+    role_level_alignment: 8,
+    communication_quality: 5,
+  },
+  behavioral: {
+    model_answer_alignment: 10,
+    factual_correctness: 10,
+    completeness: 15,
+    reasoning_quality: 20, // ownership / reflection
+    clarity_structure: 15,
+    role_level_alignment: 15,
+    communication_quality: 15,
   },
   case_study: {
-    problem_framing: 20,
-    analysis_quality: 25,
-    business_judgment: 20,
-    recommendation_quality: 15,
-    clarity: 10,
-    role_alignment: 10,
+    model_answer_alignment: 15,
+    factual_correctness: 15,
+    completeness: 15,
+    reasoning_quality: 30, // analysis / business judgment
+    clarity_structure: 12,
+    role_level_alignment: 8,
+    communication_quality: 5,
   },
   sales: {
-    discovery_quality: 20,
-    objection_handling: 20,
-    customer_empathy: 15,
-    persuasion: 15,
-    structure: 15,
-    communication: 15,
+    model_answer_alignment: 10,
+    factual_correctness: 10,
+    completeness: 12,
+    reasoning_quality: 18,
+    clarity_structure: 15,
+    role_level_alignment: 15,
+    communication_quality: 20, // persuasion / empathy
   },
   hr_screening: {
-    relevance: 20,
-    motivation: 20,
-    role_alignment: 25,
-    clarity: 15,
-    professionalism: 10,
-    risk_flags: 10,
+    model_answer_alignment: 10,
+    factual_correctness: 12,
+    completeness: 13,
+    reasoning_quality: 12,
+    clarity_structure: 13,
+    role_level_alignment: 25, // fit / motivation
+    communication_quality: 15,
   },
   mixed: UNIVERSAL_DIMENSIONS,
   custom: UNIVERSAL_DIMENSIONS,
 };
 
+// Per-question-type overrides (still the 7 canonical keys).
 export const QUESTION_TYPE_WEIGHTS: Partial<Record<QuestionType, DimensionWeights>> = {
   technical_theory: {
-    correctness: 30,
-    concept_coverage: 25,
-    depth: 15,
-    clarity: 15,
-    examples: 10,
-    communication: 5,
+    model_answer_alignment: 28,
+    factual_correctness: 27,
+    completeness: 15,
+    reasoning_quality: 12,
+    clarity_structure: 8,
+    role_level_alignment: 5,
+    communication_quality: 5,
   },
   coding: {
-    problem_understanding: 15,
-    algorithm_correctness: 30,
-    edge_cases: 15,
-    complexity_analysis: 15,
-    code_quality: 15,
-    communication: 10,
+    model_answer_alignment: 20,
+    factual_correctness: 30, // algorithm correctness
+    completeness: 15, // edge cases
+    reasoning_quality: 20, // complexity / approach
+    clarity_structure: 7,
+    role_level_alignment: 4,
+    communication_quality: 4,
   },
   system_design: INTERVIEW_TYPE_WEIGHTS.system_design,
   behavioral: INTERVIEW_TYPE_WEIGHTS.behavioral,
@@ -88,12 +111,13 @@ export const QUESTION_TYPE_WEIGHTS: Partial<Record<QuestionType, DimensionWeight
   sales_roleplay: INTERVIEW_TYPE_WEIGHTS.sales,
   hr_screening: INTERVIEW_TYPE_WEIGHTS.hr_screening,
   followup: {
-    addressed_followup: 20,
-    correctness: 20,
-    depth_expansion: 20,
-    consistency: 15,
-    adaptability: 15,
-    communication: 10,
+    model_answer_alignment: 15,
+    factual_correctness: 20,
+    completeness: 20, // depth expansion
+    reasoning_quality: 20, // adaptability / consistency
+    clarity_structure: 10,
+    role_level_alignment: 5,
+    communication_quality: 10,
   },
 };
 
@@ -102,7 +126,7 @@ export function getDimensionWeights(
   questionType?: QuestionType,
 ): DimensionWeights {
   if (questionType && QUESTION_TYPE_WEIGHTS[questionType]) {
-    return QUESTION_TYPE_WEIGHTS[questionType];
+    return QUESTION_TYPE_WEIGHTS[questionType] as DimensionWeights;
   }
 
   return INTERVIEW_TYPE_WEIGHTS[interviewType] ?? UNIVERSAL_DIMENSIONS;

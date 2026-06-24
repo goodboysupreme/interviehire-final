@@ -5,6 +5,7 @@ from app.config import settings
 from app.websocket_routes import router as websocket_router
 from app.database import Base, engine
 from app.routers import jobs, team, organisation, usage, settings as settings_router, deepseek, auth, public, leaderboard
+from app.talent_finder.routes import router as talent_finder_router
 
 # Import all models so SQLAlchemy registers them before create_all
 import app.models  # noqa
@@ -48,6 +49,8 @@ def init_db():
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS calendar_sequence INTEGER DEFAULT 0;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS decision TEXT;"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS screening_questions TEXT;"))
+        conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS interview_settings TEXT;"))
+        conn.execute(text("""ALTER TABLE "InterviewSession" ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}';"""))
         conn.commit()
 
         # Add 'super_admin' to usertype enum in postgresql
@@ -103,12 +106,15 @@ app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 # CORS — allows Next.js frontend to talk to this API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        settings.FRONTEND_URL,
+    allow_origins=[o.strip() for o in str(settings.FRONTEND_URL).split(",") if o.strip()] + [
+        "https://interviehire.com",
+        "https://app.interviehire.com",
+        "https://interview.interviehire.com",
         "http://127.0.0.1:3000",
         "http://localhost:3000",
         "http://127.0.0.1:3001",
-        "http://localhost:3001"
+        "http://localhost:3001",
+        "http://localhost:3100",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -126,6 +132,7 @@ app.include_router(settings_router.router,  prefix="/api/settings", tags=["Setti
 app.include_router(deepseek.router,         prefix="/api/deepseek", tags=["DeepSeek"])
 app.include_router(public.router,           prefix="/api/public",   tags=["Public"])
 app.include_router(leaderboard.router,      prefix="/api/leaderboard", tags=["Leaderboard"])
+app.include_router(talent_finder_router,    prefix="/api/talent-finder", tags=["Talent Finder"])
 
 
 @app.get("/")

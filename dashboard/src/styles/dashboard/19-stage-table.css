@@ -908,3 +908,65 @@ body.light-theme .afd-item:hover { background: rgba(0,0,0,0.03); }
   cursor: not-allowed;
 }
 
+
+/* ── Interview Analysis tab (job-level saved AI interview reports) ───────────── */
+.ia-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 4px 0 14px;
+}
+.ia-header .ra-candidates-title { margin: 0 0 4px; }
+.ia-count-tag {
+  flex: none;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-soft, #94a3b8);
+  background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  white-space: nowrap;
+}
+.ia-table .cand-name-link { cursor: pointer; }
+.ia-table .report-link { white-space: nowrap; }
+.ia-violations {
+  font-size: 11px;
+  color: var(--color-text-faint, #64748b);
+  margin-left: 4px;
+}
+.ia-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 8px;
+  color: var(--color-text-soft, #94a3b8);
+  font-size: 13px;
+}
+.ia-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border, rgba(255, 255, 255, 0.15));
+  border-top-color: var(--color-accent, #14b8a6);
+  animation: ia-spin 0.7s linear infinite;
+}
+@keyframes ia-spin { to { transform: rotate(360deg); } }
+
+/* Recommendation pills */
+.ia-rec {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.ia-rec-strong-yes { color: #059669; background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.35); }
+.ia-rec-yes        { color: #16a34a; background: rgba(34, 197, 94, 0.12);  border: 1px solid rgba(34, 197, 94, 0.30); }
+.ia-rec-hold       { color: #d97706; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.30); }
+.ia-rec-no         { color: #dc2626; background: rgba(239, 68, 68, 0.12);  border: 1px solid rgba(239, 68, 68, 0.30); }
+.ia-rec-strong-no  { color: #b91c1c; background: rgba(239, 68, 68, 0.16);  border: 1px solid rgba(239, 68, 68, 0.40); }
+.ia-rec-na         { color: var(--color-text-faint, #64748b); }

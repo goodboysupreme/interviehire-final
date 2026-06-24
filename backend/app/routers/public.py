@@ -226,7 +226,7 @@ def confirm_interview_slot(token: str, db: Session = Depends(get_db)):
     
     # Send custom MIME/iCalendar confirmation email
     reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
-    interview_link = f"{settings.FRONTEND_URL}/interview?sessionId={applicant.id}"
+    interview_link = f"{settings.INTERVIEW_ROOM_URL.rstrip('/')}/interviewcandidateroom?sessionId={applicant.id}"
     uid = f"interview-{stage.lower().replace(' ', '-')}-{applicant.id}@interviehire.com"
     
     try:
@@ -372,7 +372,7 @@ def public_reschedule_interview(
     db.refresh(applicant)
     
     reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
-    interview_link = f"{settings.FRONTEND_URL}/interview?sessionId={applicant.id}"
+    interview_link = f"{settings.INTERVIEW_ROOM_URL.rstrip('/')}/interviewcandidateroom?sessionId={applicant.id}"
     uid = f"interview-{stage.lower().replace(' ', '-')}-{applicant.id}@interviehire.com"
 
     try:

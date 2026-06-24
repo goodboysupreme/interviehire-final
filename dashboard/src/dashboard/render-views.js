@@ -9,7 +9,7 @@ import { openCandidateReport } from './report.js';
 import { soundEngine } from './sound.js';
 import { showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
-import { getDataSource } from './api.js';
+import { getDataSource, apiFetchUsageStats } from './api.js';
 
 // ==========================================
 // RENDERING & INTERACTIVE VIEWS
@@ -698,6 +698,61 @@ function filterCandidatesByDateRange(candidates) {
   });
 }
 
+let usageStatsRequestId = 0;
+
+function applyUsageStats(stats) {
+  if (!stats) return;
+  document.getElementById('stat-total-applicants').textContent = stats.total_applicants ?? 0;
+  document.getElementById('stat-resume-analysis').textContent = stats.resume_analysed ?? 0;
+  document.getElementById('stat-recruiter-screening').textContent = stats.screening_attempted ?? 0;
+  document.getElementById('stat-functional-interview').textContent = stats.functional_attempted ?? 0;
+
+  const appPills = document.querySelectorAll('.card-metric:nth-child(1) .m-pill .v');
+  if (appPills.length >= 4) {
+    appPills[0].textContent = stats.career_page ?? 0;
+    appPills[1].textContent = stats.bulk_upload ?? 0;
+    appPills[2].textContent = stats.scheduled ?? 0;
+    appPills[3].textContent = stats.direct_link ?? 0;
+  }
+
+  const resPills = document.querySelectorAll('.card-metric:nth-child(2) .m-pill .v');
+  if (resPills.length >= 3) {
+    resPills[0].textContent = stats.resume_analysed ?? 0;
+    resPills[1].textContent = stats.resume_shortlisted ?? 0;
+    resPills[2].textContent = stats.resume_waitlisted ?? 0;
+  }
+
+  const scrPills = document.querySelectorAll('.card-metric:nth-child(3) .m-pill .v');
+  if (scrPills.length >= 4) {
+    scrPills[0].textContent = stats.screening_attempted ?? 0;
+    scrPills[1].textContent = stats.screening_scheduled ?? 0;
+    scrPills[2].textContent = stats.screening_shortlisted ?? 0;
+    scrPills[3].textContent = stats.screening_waitlisted ?? 0;
+  }
+
+  const funPills = document.querySelectorAll('.card-metric:nth-child(4) .m-pill .v');
+  if (funPills.length >= 4) {
+    funPills[0].textContent = stats.functional_attempted ?? 0;
+    funPills[1].textContent = stats.functional_scheduled ?? 0;
+    funPills[2].textContent = stats.functional_shortlisted ?? 0;
+    funPills[3].textContent = stats.functional_waitlisted ?? 0;
+  }
+}
+
+function refreshUsageStatsFromBackend() {
+  if (getDataSource() !== 'api') return;
+  const { start, end } = getDateRangeBounds();
+  const requestId = ++usageStatsRequestId;
+  apiFetchUsageStats({
+    date_from: start ? start.toISOString() : null,
+    date_to: end ? end.toISOString() : null,
+  }).then((stats) => {
+    if (requestId === usageStatsRequestId) applyUsageStats(stats);
+  }).catch((err) => {
+    console.warn('Usage stats refresh failed:', err);
+  });
+}
+
 function updateSummaryMetrics() {
   const filtered = filterCandidatesByDateRange(AppState.candidates);
 
@@ -749,6 +804,8 @@ function updateSummaryMetrics() {
     funPills[2].textContent = 0;
     funPills[3].textContent = 0;
   }
+
+  refreshUsageStatsFromBackend();
 }
 
 

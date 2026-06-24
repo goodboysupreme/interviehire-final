@@ -11,6 +11,7 @@ import {
 import { asrAvailable, transcribeAudioSegments } from '../services/asr.service.js';
 import { generateTranscriptReport } from '../services/transcript-report.service.js';
 import { evaluateInterview } from '../services/evaluation.service.js';
+import { evaluateInterviewWithAviral } from '../services/aviral-evaluation.service.js';
 
 type TranscriptSpeaker = 'candidate' | 'interviewer';
 
@@ -153,19 +154,46 @@ export async function transcriptRoutes(app: FastifyInstance) {
 
     await finalizeTranscript(sessionId);
 
+    // Primary holistic report (keeps Deep Analysis unchanged), then the structured
+    // rubric/dimension/proctoring evaluation (gpt-4o when OPENAI_API_KEY is set,
+    // else OpenRouter) merged under `.structured` for the new analysis section.
+    let primary: any = null;
+    let engine = 'transcript_llm';
     try {
-      const evaluation = await generateTranscriptReport(sessionId);
-      return { evaluation, engine: 'transcript_llm' };
+      primary = await generateTranscriptReport(sessionId);
     } catch (llmErr) {
       req.log?.warn?.(llmErr, 'transcript LLM report failed; falling back to deterministic evaluator');
       try {
-        const evaluation = await evaluateInterview(sessionId);
-        return { evaluation, engine: 'deterministic' };
+        primary = await evaluateInterview(sessionId);
+        engine = 'deterministic';
       } catch (err: any) {
-        req.log?.error?.(err, 'report generation failed');
-        return reply.code(500).send({ error: err?.message || 'Report generation failed' });
+        primary = null;
       }
     }
+
+    let structured: any = null;
+    try {
+      structured = await evaluateInterviewWithAviral(sessionId);
+    } catch (structErr) {
+      req.log?.warn?.(structErr, 'structured (aviral) evaluation failed');
+    }
+
+    if (!primary && !structured) {
+      return reply.code(500).send({ error: 'Report generation failed' });
+    }
+
+    // Merge: holistic stays the headline report; the structured analysis is nested
+    // (and also used standalone if the holistic pass failed).
+    const evaluation = primary
+      ? { ...primary, structured: structured ?? undefined }
+      : { ...structured, structured };
+
+    await prisma.interviewSession.update({
+      where: { id: sessionId },
+      data: { evaluation: evaluation as any, status: 'EVALUATED', completedAt: new Date() },
+    });
+
+    return { evaluation, engine: structured ? `${engine}+aviral` : engine };
   });
 
   // Download the finalized .txt (finalizes on demand if missing).

@@ -6,10 +6,11 @@ import { navigateToTab, openDrawer } from './navigation.js';
 import { updateAllSlidingPills } from './pills.js';
 import { applyDateRangeGlobally, renderAnalyticsTable, renderJobCards, updateSummaryMetrics } from './render-views.js';
 import { isGarbageText, resumeIdentityCache, resumeTextCache, runBulkResumeAnalysis } from './resume-analysis.js';
-import { isApiMode, apiAddApplicant } from './api.js';
 import { soundEngine } from './sound.js';
-import { AppState } from './state.js';
+import { AppState, defaultInterviewSettings } from './state.js';
 import { pushUrl } from './url-sync.js';
+import { isApiMode, apiAddApplicant, apiUpdateApplicant, apiUploadResumes, scheduleJobSave } from './api.js';
+import { saveStateToLocalStorage } from './ai-api.js';
 
 // ============================================================
 // SOURCING VIEW CONTROLLER & MASS INTAKE LOGIC
@@ -91,7 +92,24 @@ function initSourcing() {
   const isetClose = document.getElementById('btn-close-iset');
   const isetSave = document.getElementById('btn-save-iset');
   if (isetBtn && isetOverlay) {
+    // toggle key → DOM id (camelCase keys flow unchanged to backend + engine)
+    const ISET_TOGGLES = {
+      interviewEnabled: 'iset-toggle-status', allowMobile: 'iset-toggle-mobile',
+      allowLate: 'iset-toggle-late', continueFromMiddle: 'iset-toggle-continue',
+      allowReattempt: 'iset-toggle-reattempt', requireCv: 'iset-toggle-cv',
+      proctoring: 'iset-toggle-proctor', whiteLabel: 'iset-toggle-whitelabel',
+    };
+    const activeJob = () => AppState.jobs.find(j => j.id === AppState.activeJobId);
+    const applySettingsToUi = (s) => {
+      Object.entries(ISET_TOGGLES).forEach(([key, id]) => {
+        document.getElementById(id)?.classList.toggle('active', !!s[key]);
+      });
+      const sel = document.getElementById('iset-access');
+      if (sel) sel.value = s.accessControl || 'link';
+    };
     isetBtn.addEventListener('click', () => {
+      const job = activeJob();
+      applySettingsToUi((job && job.interviewSettings) || defaultInterviewSettings());
       isetOverlay.classList.add('open');
       soundEngine.playClick();
     });
@@ -103,6 +121,19 @@ function initSourcing() {
       if (e.target === isetOverlay) isetOverlay.classList.remove('open');
     });
     isetSave?.addEventListener('click', () => {
+      const job = activeJob();
+      if (job) {
+        const s = {};
+        Object.entries(ISET_TOGGLES).forEach(([key, id]) => {
+          s[key] = !!document.getElementById(id)?.classList.contains('active');
+        });
+        s.accessControl = document.getElementById('iset-access')?.value || 'link';
+        job.interviewSettings = s;
+        saveStateToLocalStorage();
+        scheduleJobSave(job);
+      } else {
+        showPremiumToast('Open a job first to save its interview settings.', 'error');
+      }
       isetOverlay.classList.remove('open');
       showPremiumToast('Interview settings saved.', 'success');
       soundEngine.playChime([523.25], 0.15);

@@ -1,9 +1,11 @@
 import { document, setInterval, clearInterval } from './runtime.js';
 import { recalculateJobPipelines, renderKanbanBoard } from './kanban-swarm.js';
 import { renderAnalyticsTable, renderTeamTable, updateSummaryMetrics } from './render-views.js';
+import { saveStateToLocalStorage } from './ai-api.js';
 import { soundEngine } from './sound.js';
 import { showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
+import { getDataSource, apiMoveApplicantStage } from './api.js';
 
 // === Drag and Drop, Column Customization, Stage Panes and Agent Customization ===
 
@@ -32,7 +34,7 @@ function initKanbanDragAndDrop() {
       col.classList.remove('drag-hover');
     });
 
-    col.addEventListener('drop', (e) => {
+    col.addEventListener('drop', async (e) => {
       e.preventDefault();
       col.classList.remove('drag-hover');
       
@@ -42,6 +44,7 @@ function initKanbanDragAndDrop() {
       if (candidate && candidate.status !== stage) {
         const oldStatus = candidate.status;
         candidate.status = stage;
+        saveStateToLocalStorage();
         
         soundEngine.playChime([329.63, 440.00, 523.25], 0.2, 0.08);
         showPremiumToast(`${candidate.name} moved from ${oldStatus} to ${stage}`, 'success');
@@ -50,6 +53,33 @@ function initKanbanDragAndDrop() {
         updateSummaryMetrics();
         renderAnalyticsTable();
         renderKanbanBoard();
+
+        if (getDataSource() === 'api' && candidate._backend) {
+          try {
+            const keep = { jobApplied: candidate.jobApplied, jobId: candidate.jobId, registeredOn: candidate.registeredOn };
+            const updated = await apiMoveApplicantStage(candidate.backendId || candidate.id, stage);
+            if (updated) {
+              Object.assign(candidate, updated);
+              if (keep.jobApplied) candidate.jobApplied = keep.jobApplied;
+              if (keep.jobId) candidate.jobId = keep.jobId;
+              if (keep.registeredOn) candidate.registeredOn = keep.registeredOn;
+            }
+            saveStateToLocalStorage();
+            recalculateJobPipelines();
+            updateSummaryMetrics();
+            renderAnalyticsTable();
+            renderKanbanBoard();
+          } catch (err) {
+            console.warn('Stage drag sync failed:', err);
+            candidate.status = oldStatus;
+            saveStateToLocalStorage();
+            recalculateJobPipelines();
+            updateSummaryMetrics();
+            renderAnalyticsTable();
+            renderKanbanBoard();
+            showPremiumToast(`Could not sync ${candidate.name}'s stage to the backend.`, 'error');
+          }
+        }
       }
     });
   });

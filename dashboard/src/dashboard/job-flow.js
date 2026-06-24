@@ -11,7 +11,11 @@ import { soundEngine } from './sound.js';
 import { navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
 import { getDataSource, ENGINE_WEB_URL, apiCreateTestSession } from './api.js';
-import { ensureFunctionalBlueprint, computeCalibration } from './blueprint-engine.js';
+import {
+  ensureFunctionalBlueprint, computeCalibration, computeGenerationPlan, analyzeRequirements,
+  generateFunctionalOutline, localFunctionalBlueprint, pinBlueprintToRequirements,
+  mergeBlueprintPreservingEdits, enrichQuestionRubric, autofillOutlineNotes,
+} from './blueprint-engine.js';
 import { pushUrl } from './url-sync.js';
 import { openReportDrawerForCandidate } from './report.js';
 
@@ -24,6 +28,7 @@ import { openReportDrawerForCandidate } from './report.js';
 // Tracks the job whose post-creation "Add Candidates" banner should stay shown,
 // so the React route echo (navigateToPath → flagless openJobFlowView) can't wipe it.
 let pendingAddCandidates = null;
+const flowBlueprintGeneration = new Set();
 
 // Transient resume-criteria suggestion pop-up (one group at a time).
 let raSuggest = { group: null, loading: false, items: null };
@@ -109,6 +114,10 @@ function toggleHeaderElementsForJobFlow(showJobFlowHeader, job = null) {
     if (themeToggle) themeToggle.style.display = '';
     if (interviewSettings) interviewSettings.style.display = '';
     
+    // Leaving the flow without acting drops any pending Add-Candidates intent, so
+    // a later deliberate re-open of the same job doesn't resurrect a stale banner.
+    pendingAddCandidates = null;
+
     const collabBtn = document.getElementById('jf-header-collab-btn');
     const publishBtn = document.getElementById('jf-header-publish-btn');
     if (collabBtn) collabBtn.style.display = 'none';
@@ -452,6 +461,10 @@ function renderJobFlowPipeline(job) {
       
       recalculateJobPipelines();
       saveStateToLocalStorage();
+      scheduleJobSave(job);
+      if (stageKey === 'functionalInterview' && toggle.checked) {
+        renderJobFlowConfig(job, stageKey);
+      }
       renderJobCards();
     });
   });
@@ -475,6 +488,64 @@ function renderJobFlowConfig(job, stageKey) {
       renderFunctionalConfig(job, panel);
       break;
   }
+}
+
+async function ensureJobFlowQuestions(job, panel) {
+  if (!job || flowBlueprintGeneration.has(job.id)) return;
+  const current = ensureFunctionalBlueprint(job);
+  if ((current.topics || []).some((t) => (t.questions || []).length)) return;
+
+  flowBlueprintGeneration.add(job.id);
+  renderFunctionalConfig(job, panel);
+
+  let fb;
+  let aiOk = true;
+  try {
+    const plan = computeGenerationPlan(job);
+    let requirements = plan.requirements;
+    try { requirements = await analyzeRequirements(job); } catch { requirements = plan.requirements; }
+    const topicCount = Math.min(6, Math.max(plan.topicCount, Math.ceil(requirements.length / plan.questionsPerTopic) || plan.topicCount));
+    fb = await generateFunctionalOutline(job, { topicCount, questionsPerTopic: plan.questionsPerTopic, requirements });
+    if (!fb.topics.length) throw new Error('empty blueprint');
+    fb = pinBlueprintToRequirements(job, fb, requirements);
+    fb = mergeBlueprintPreservingEdits(job.functionalParameters, fb);
+  } catch (err) {
+    console.warn('Functional blueprint auto-generation fell back locally:', err);
+    fb = localFunctionalBlueprint(job);
+    fb = pinBlueprintToRequirements(job, fb, computeGenerationPlan(job).requirements);
+    aiOk = false;
+  }
+
+  job.functionalParameters = fb;
+  saveStateToLocalStorage();
+  scheduleJobSave(job);
+  renderFunctionalConfig(job, panel);
+
+  if (aiOk) {
+    const queue = fb.topics.flatMap((t) => t.questions.map((q) => ({ q, topicName: t.name })));
+    const worker = async () => {
+      while (queue.length) {
+        const { q, topicName } = queue.shift();
+        try {
+          const r = await enrichQuestionRubric(job, q, topicName);
+          if (!q.edited) {
+            q.modelAnswer = r.modelAnswer;
+            q.rubric = r.rubric;
+            if (r.followUpIntent) q.followUpIntent = r.followUpIntent;
+          }
+        } catch { /* outline remains usable; Studio can enrich later */ }
+        saveStateToLocalStorage();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
+  }
+
+  autofillOutlineNotes(job.functionalParameters, job);
+  saveStateToLocalStorage();
+  scheduleJobSave(job);
+  flowBlueprintGeneration.delete(job.id);
+  renderFunctionalConfig(job, panel);
+  showPremiumToast(aiOk ? 'Functional questions formed from the job flow.' : 'Functional questions formed offline.', 'success');
 }
 
 function getVerboseJobDescription(job) {
@@ -753,7 +824,7 @@ function renderResumeAnalysisConfig(job, panel) {
           <p class="ra-criteria-group-desc">Candidates meeting these criteria will be shortlisted; others waitlisted for review</p>
         </div>
       </div>
-      <div class="ra-criteria-items">${criteria.mustHave.map((item, i) => `<div class="ra-criteria-item must-have"><span class="ra-criteria-num must-have">${i+1}</span><span class="ra-criteria-text">${item}</span></div>`).join('')}</div>
+      <div class="ra-criteria-items">${criteria.mustHave.map((item, i) => `<div class="ra-criteria-item must-have"><span class="ra-criteria-num must-have">${i+1}</span><span class="ra-criteria-text">${escapeHTML(item)}</span></div>`).join('')}</div>
     </div>
 
     <div class="ra-criteria-divider"><span class="ra-criteria-divider-text">AND</span></div>
@@ -766,7 +837,7 @@ function renderResumeAnalysisConfig(job, panel) {
           <p class="ra-criteria-group-desc">Candidates with no red flags will be shortlisted; others waitlisted for review</p>
         </div>
       </div>
-      <div class="ra-criteria-items">${criteria.redFlags.map((item, i) => `<div class="ra-criteria-item red-flags"><span class="ra-criteria-num red-flags">${i+1}</span><span class="ra-criteria-text">${item}</span></div>`).join('')}</div>
+      <div class="ra-criteria-items">${criteria.redFlags.map((item, i) => `<div class="ra-criteria-item red-flags"><span class="ra-criteria-num red-flags">${i+1}</span><span class="ra-criteria-text">${escapeHTML(item)}</span></div>`).join('')}</div>
     </div>
 
     <div class="ra-criteria-divider"><span class="ra-criteria-divider-text">AND</span></div>
@@ -780,7 +851,7 @@ function renderResumeAnalysisConfig(job, panel) {
         </div>
       </div>
       <div class="ra-criteria-min-match">Minimum match: ${criteria.goodToHaveMinMatch} out of ${criteria.goodToHave.length} criteria</div>
-      <div class="ra-criteria-items">${criteria.goodToHave.map((item, i) => `<div class="ra-criteria-item good-to-have"><span class="ra-criteria-num good-to-have">${i+1}</span><span class="ra-criteria-text">${item}</span></div>`).join('')}</div>
+      <div class="ra-criteria-items">${criteria.goodToHave.map((item, i) => `<div class="ra-criteria-item good-to-have"><span class="ra-criteria-num good-to-have">${i+1}</span><span class="ra-criteria-text">${escapeHTML(item)}</span></div>`).join('')}</div>
     </div>
   `;
 }
@@ -801,7 +872,7 @@ function renderResumeAnalysisFlowConfig(job, panel) {
     ` : `
       <div class="ra-criteria-item ${tone}">
         <span class="ra-criteria-num ${tone}">${i + 1}</span>
-        <span class="ra-criteria-text">${item}</span>
+        <span class="ra-criteria-text">${escapeHTML(item)}</span>
       </div>
     `).join('');
     if (!isEditing) return html;
@@ -1570,6 +1641,10 @@ function renderFunctionalConfig(job, panel) {
   const fb = ensureFunctionalBlueprint(job);
   const cal = computeCalibration(fb);
   const topics = fb.topics || [];
+  const autoForming = flowBlueprintGeneration.has(job.id);
+  if (activeTab === 'structure' && job.pipelineConfig[stageKey].enabled && !topics.length && !autoForming) {
+    setTimeout(() => ensureJobFlowQuestions(job, panel), 0);
+  }
 
   let headerHtml = `
     <div class="jf-config-header">
@@ -1605,7 +1680,7 @@ function renderFunctionalConfig(job, panel) {
           `).join('')}
         </div>
       ` : `
-        <div style="margin-top:16px;padding:24px;text-align:center;color:var(--color-text-muted);font-size:0.8rem;background:var(--color-surface-2);border:1px solid var(--glass-border);border-radius:12px;">No questions yet. Open Question Studio to generate a rubric-graded interview blueprint.</div>
+        <div style="margin-top:16px;padding:24px;text-align:center;color:var(--color-text-muted);font-size:0.8rem;background:var(--color-surface-2);border:1px solid var(--glass-border);border-radius:12px;">${autoForming ? 'Forming role-specific functional questions...' : 'No questions yet. Open Question Studio to generate a rubric-graded interview blueprint.'}</div>
       `}
 
       <button class="btn-jf-primary" id="btn-open-studio" style="margin-top:16px;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px;">
