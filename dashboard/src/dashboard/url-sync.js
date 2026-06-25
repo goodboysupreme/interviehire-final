@@ -84,8 +84,8 @@ function patchJobFlowNav() {
 function patchSourcingNav() {
   const original = window.navigateToSourcing;
   if (!original || original.__urlPatched) return;
-  window.navigateToSourcing = function(jobId) {
-    original(jobId);
+  window.navigateToSourcing = function(jobId, targetStage = null) {
+    original(jobId, targetStage);
     pushUrl(`/dashboard/sourcing/${jobId}`);
   };
   window.navigateToSourcing.__urlPatched = true;

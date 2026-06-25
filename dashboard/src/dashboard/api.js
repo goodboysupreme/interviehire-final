@@ -486,40 +486,35 @@ function mapInterviewStatus(s) {
 }
 
 function mapApplicantOutToCandidate(a = {}) {
+  const status = a.decision === 'hired' ? 'Hired'
+    : a.decision === 'rejected' ? 'Rejected'
+    : a.functional_status ? 'Functional'
+    : (a.screening_status || a.decision === 'shortlisted') ? 'Screening'
+    : 'Resume';
+
+  const rawStatus = (status === 'Screening') ? a.screening_status : a.functional_status;
+  const rawScore = (status === 'Screening') ? a.screening_score : a.functional_score;
+
   return {
     id: a.id,
     name: a.name || '',
     email: a.email || '',
     jobApplied: a.job_role_title || a.role_name || '',
-    // decision (the recruiter's explicit call) wins over derived stage so Hired/Rejected
-    // and a pre-schedule shortlist survive a refetch. 'shortlisted' shows as Screening
-    // (advanced past resume); exact Screening-vs-Functional persists once scheduled.
-    status: a.decision === 'hired' ? 'Hired'
-      : a.decision === 'rejected' ? 'Rejected'
-      : a.functional_status ? 'Functional'
-      : (a.screening_status || a.decision === 'shortlisted') ? 'Screening'
-      : 'Resume',
+    status: status,
     source: a.source || 'ATS',
-    interviewStatus: mapInterviewStatus(a.functional_status),
-    interviewScore: a.functional_score ?? a.overall_interview_score ?? null,
+    interviewStatus: mapInterviewStatus(rawStatus),
+    interviewScore: rawScore ?? a.overall_interview_score ?? null,
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,
     matchScore: a.match_score ?? null,
-    // Stored resume text + analysis flags (ApplicantOut). resumeText hydrates the
-    // analysis cache so "Reanalyse" doesn't need an extra resume-text fetch.
     resumeText: a.resume_text ?? null,
     resumeAnalysed: a.resume_analysed ?? null,
     resumeShortlisted: a.resume_shortlisted ?? null,
     decision: a.decision ?? null,
-    // Recruiter screening result — the backend sends these (ApplicantOut), the
-    // dashboard's report + Deep Analysis read them off the candidate. Without this
-    // mapping the screening block stays blank in api mode even when scored.
     recruiterScreening: a.recruiter_screening ?? null,
     recruiterScreeningScore: a.recruiter_screening_score ?? null,
     screeningStatus: mapInterviewStatus(a.screening_status),
     screeningScore: a.screening_score ?? null,
     attemptedAt: a.attempted_at ?? null,
-    // Rehydrate the stored analysis so a re-opened report shows the saved result
-    // instead of re-scoring from scratch.
     ...(() => { try { const p = a.resume_analysis_report ? JSON.parse(a.resume_analysis_report) : null; return p ? { resumeAnalysis: p } : {}; } catch { return {}; } })(),
     _backend: true,
   };
