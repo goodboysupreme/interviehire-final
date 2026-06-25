@@ -39,6 +39,11 @@ class Applicant(Base):
     email = Column(String, nullable=False, index=True)
     phone = Column(String, nullable=True)
     source = Column(Enum(ApplicantSource), nullable=True)
+    # How the candidate was added to the pipeline (input method), independent of
+    # `source` which is overloaded for stage routing (scheduled/functional) and
+    # analytics. Stored as a string reusing ApplicantSource tokens:
+    # bulk_upload | ats | direct_link (career_page also labelable).
+    entry_method = Column(String, nullable=True)
     resume_url = Column(String, nullable=True)
     remarks = Column(Text, nullable=True)
 

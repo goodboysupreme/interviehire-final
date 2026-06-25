@@ -1950,6 +1950,7 @@ def upload_resumes(
                 email=email_val,
                 phone=parsed_phone or "+1 555-0199",
                 source=source or ApplicantSource.bulk_upload,
+                entry_method="bulk_upload",  # upload-resumes is always a file (bulk) add
                 resume_url=file_path,
                 resume_text=resume_text or None,
                 job_id=job_id,

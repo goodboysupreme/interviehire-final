@@ -10,6 +10,7 @@
 import { createTopic, createQuestionBlueprint, toFunctionalParameters, toScreeningQuestions } from './blueprint-engine.js';
 import { request, API_BASE, apiLogin, apiSignup, apiMe, apiLogout, isAuthed, clearAuthed, apiOnboarding, apiListOrganisations, apiSwitchContext } from '../auth-client.js';
 import { defaultInterviewSettings } from './state.js';
+import { SOURCE_LABELS } from './escape.js';
 
 // Auth + HTTP primitives live in ../auth-client.js (dependency-free so the lean
 // /login + /signup pages can reuse them). Re-export for existing callers here.
@@ -162,7 +163,7 @@ export async function ensureBackendApplicantId(c2, jobId) {
   return created.id;
 }
 
-export async function apiAddApplicant(jobId, { name, email, phone, source } = {}) {
+export async function apiAddApplicant(jobId, { name, email, phone, source, entryMethod } = {}) {
   const data = await request(`/jobs/${jobId}/applicants`, {
     method: 'POST',
     body: {
@@ -173,6 +174,9 @@ export async function apiAddApplicant(jobId, { name, email, phone, source } = {}
       // Recruiter Screening); 'functional' → functional_status=pending; omitted
       // → Resume Analysis only. Sent only when provided so existing callers are unaffected.
       ...(source ? { source } : {}),
+      // How the candidate was added (bulk_upload | direct_link | ats). Independent of
+      // `source` (which is overloaded for stage routing) — drives the "Source" column.
+      ...(entryMethod ? { entry_method: entryMethod } : {}),
     },
   });
   return mapApplicantOutToCandidate(data);
@@ -488,6 +492,10 @@ function mapApplicantOutToCandidate(a = {}) {
       : (a.screening_status || a.decision === 'shortlisted') ? 'Screening'
       : 'Resume',
     source: a.source || 'ATS',
+    // Input method for the "Source" column. Prefer the explicit entry_method; fall back
+    // to a *labelable* legacy `source` only (scheduled/functional/null → null → "—").
+    entryMethod: SOURCE_LABELS[a.entry_method] ? a.entry_method
+      : (SOURCE_LABELS[a.source] ? a.source : null),
     interviewStatus: mapInterviewStatus(a.functional_status),
     interviewScore: a.functional_score ?? a.overall_interview_score ?? null,
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,

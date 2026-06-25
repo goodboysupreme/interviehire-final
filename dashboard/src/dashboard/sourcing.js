@@ -684,7 +684,7 @@ async function importCsvCandidates() {
 
   // Persist to the backend BEFORE navigating — the job-detail hydrate then fetches
   // and shows them, so no manual refresh is needed (api mode).
-  await persistImportedCandidates(localIds, activeJob);
+  await persistImportedCandidates(localIds, activeJob, 'bulk_upload');
   navigateToJobDetail(AppState.activeJobId);
 }
 
@@ -873,7 +873,7 @@ async function importResumesCandidates() {
 
   // Persist first so the candidates survive the hydrate (no manual refresh), then
   // analyse against their real backend ids (the resume caches were re-keyed).
-  const backendIds = await persistImportedCandidates(importedCandIds, activeJob);
+  const backendIds = await persistImportedCandidates(importedCandIds, activeJob, 'bulk_upload');
   navigateToJobDetail(AppState.activeJobId);
 
   if (currentSourcingMode === 'analyse') {
@@ -1131,7 +1131,7 @@ async function importManualQueue() {
   }
 
   // Persist before navigating so the hydrate shows them without a manual refresh.
-  await persistImportedCandidates(localIds, activeJob);
+  await persistImportedCandidates(localIds, activeJob, 'direct_link');
   navigateToJobDetail(AppState.activeJobId);
 }
 
@@ -1191,7 +1191,7 @@ function addCandidateToAppState(name, email, phone, job, resumeText) {
 // jobId === job.id, which the next hydrate then wipes — so rather than leave an
 // invisible ghost (silent loss), we drop the failed rows and tell the recruiter
 // exactly who failed and why, so they can fix and re-import.
-async function persistImportedCandidates(localIds, job) {
+async function persistImportedCandidates(localIds, job, entryMethod = null) {
   if (!isApiMode() || !job || !job._backend) return localIds;
   const ids = [];
   const failed = [];
@@ -1204,7 +1204,9 @@ async function persistImportedCandidates(localIds, job) {
       // appear in Recruiter Screening too; analyse-mode (status 'Resume') sends no
       // source and stays Resume-only. Still one applicant row either way.
       const source = cand.status === 'Screening' ? 'scheduled' : null;
-      const created = await apiAddApplicant(job.id, { name: cand.name, email: cand.email, phone: cand.phone, source });
+      // entryMethod (how added: bulk_upload | direct_link) is independent of `source`
+      // (stage routing) and feeds the "Source" column. null for callers that don't pass it.
+      const created = await apiAddApplicant(job.id, { name: cand.name, email: cand.email, phone: cand.phone, source, entryMethod });
       if (!created || !created.id) throw new Error('no id returned');
       const uuid = created.id;
       if (resumeTextCache[localId] != null) { resumeTextCache[uuid] = resumeTextCache[localId]; delete resumeTextCache[localId]; }

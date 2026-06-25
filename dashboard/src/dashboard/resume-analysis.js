@@ -1,5 +1,5 @@
 import { document } from './runtime.js';
-import { escapeHTML } from './escape.js';
+import { escapeHTML, sourceLabel } from './escape.js';
 import { callDeepSeekAPI, parseAIJson, saveStateToLocalStorage } from './ai-api.js';
 import { renderJobDetailPanes } from './job-detail-panes.js';
 import { appendTerminalLog } from './kanban-swarm.js';
@@ -166,6 +166,7 @@ function renderResumeStagePaneForJob(candidates, job, container) {
               <th>Candidate</th>
               <th>Match</th>
               <th>Recommendation</th>
+              <th>Source</th>
               <th>Resume Input</th>
               <th>Actions</th>
             </tr>
@@ -193,6 +194,7 @@ function renderResumeStagePaneForJob(candidates, job, container) {
                   <td>
                     ${isAnalysed ? getRecBadge(cached.recommendation) : '<span class="ra-status-badge pending">Pending</span>'}
                   </td>
+                  <td><span class="source-badge">${sourceLabel(c.entryMethod)}</span></td>
                   <td>
                     <div class="ra-input-cell">
                       <input type="file" id="ra-file-${c.id}" accept=".pdf,.doc,.docx,.txt" hidden>
@@ -813,7 +815,7 @@ async function runResumeAnalysis(cid, job, opts = {}) {
       } else {
         const registered = cand.backendId
           ? Promise.resolve(cand.backendId)
-          : apiAddApplicant(job.id, { name: cand.name, email: cand.email, phone: cand.phone }).then((created) => {
+          : apiAddApplicant(job.id, { name: cand.name, email: cand.email, phone: cand.phone, entryMethod: cand.entryMethod }).then((created) => {
               if (!created || !created.id) throw new Error('Could not register the candidate in the backend.');
               cand.backendId = created.id;
               cand.jobId = job.id;
@@ -868,14 +870,14 @@ function renderAnalysisResult(cid, result) {
     const recCls = result.recommendation === 'Advance' ? 'high' : result.recommendation === 'Hold' ? 'medium' : 'low';
     tds[3].innerHTML = `<span class="ra-rec-badge ${recCls}">${escapeHTML(result.recommendation)}</span>`;
   }
-  if (tds[4]) {
-    tds[4].innerHTML = `<div class="ra-input-cell">
+  if (tds[5]) {
+    tds[5].innerHTML = `<div class="ra-input-cell">
       <button class="btn-ra-view-resume" data-cid="${cid}">
         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         View Report
       </button>
     </div>`;
-    tds[4].querySelector('.btn-ra-view-resume')?.addEventListener('click', () => {
+    tds[5].querySelector('.btn-ra-view-resume')?.addEventListener('click', () => {
       openReportDrawerForCandidate(cid);
     });
   }
