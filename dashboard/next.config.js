@@ -9,6 +9,7 @@ const backendOrigin = (process.env.BACKEND_ORIGIN || '').replace(/\/$/, '');
 
 const BACKEND_API_PREFIXES = [
   'auth', 'jobs', 'team', 'organisation', 'usage', 'settings', 'public', 'leaderboard',
+  'talent-finder',
 ];
 
 const nextConfig = {

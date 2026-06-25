@@ -45,6 +45,8 @@ export default function SignupPage() {
         email: form.email.trim(),
         password: form.password,
       });
+      // New org-admin accounts need to complete onboarding (org name etc.)
+      // before they can use the dashboard.
       router.replace(onboardingRequired ? '/onboarding' : '/dashboard');
     } catch (err) {
       setError((err && err.message) || 'Could not create your account.');

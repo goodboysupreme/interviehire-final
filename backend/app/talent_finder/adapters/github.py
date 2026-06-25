@@ -107,6 +107,9 @@ class GitHubAdapter(SourceAdapter):
                 prof = self._fetch_profile(login)
                 if not prof:
                     continue
+                # Skip organisation/bot accounts — we want individual candidates.
+                if str(prof.get("type") or "").lower() != "user":
+                    continue
                 bio = (prof.get("bio") or "")
                 found = [s for s in skills_blob if s.lower() in bio.lower()]
                 langs = [s for s in skills_blob if str(s).lower() in KNOWN_LANGS]

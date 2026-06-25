@@ -20,8 +20,7 @@ const LS_SOURCE = 'IntervieHire_data_source';
 
 // The candidate interview room (ai_components/apps/web). apps/web hardcodes
 // `next dev -p 3000` which collides with the dashboard, so it is run on 3001.
-export const ENGINE_WEB_URL = (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_ENGINE_WEB_URL)
-  || 'http://localhost:3001';
+export const ENGINE_WEB_URL = process.env.NEXT_PUBLIC_ENGINE_WEB_URL || 'http://localhost:3001';
 
 export function getDataSource() {
   // Default to 'api' (live backend); only stay local if explicitly opted in.
@@ -180,6 +179,19 @@ export async function apiAddApplicant(jobId, { name, email, phone, source, entry
     },
   });
   return mapApplicantOutToCandidate(data);
+}
+
+// Bulk-add candidates to a job in one round-trip.
+// `applicants` is an array of { name, email, phone?, source? }.
+// `source` values: 'scheduled' → Recruiter Screening, 'functional' → Functional Interview,
+// 'bulk_upload' → Resume Analysis (no interview slot set).
+export async function apiAddApplicantsBulk(jobId, applicants = []) {
+  const data = await request(`/jobs/${jobId}/applicants/bulk`, {
+    method: 'POST',
+    body: { applicants },
+  });
+  const list = Array.isArray(data) ? data : [];
+  return list.map(mapApplicantOutToCandidate);
 }
 
 export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'screening') {
@@ -478,44 +490,39 @@ function mapInterviewStatus(s) {
 }
 
 function mapApplicantOutToCandidate(a = {}) {
+  const status = a.decision === 'hired' ? 'Hired'
+    : a.decision === 'rejected' ? 'Rejected'
+    : a.functional_status ? 'Functional'
+    : (a.screening_status || a.decision === 'shortlisted') ? 'Screening'
+    : 'Resume';
+
+  const rawStatus = (status === 'Screening') ? a.screening_status : a.functional_status;
+  const rawScore = (status === 'Screening') ? a.screening_score : a.functional_score;
+
   return {
     id: a.id,
     name: a.name || '',
     email: a.email || '',
     jobApplied: a.job_role_title || a.role_name || '',
-    // decision (the recruiter's explicit call) wins over derived stage so Hired/Rejected
-    // and a pre-schedule shortlist survive a refetch. 'shortlisted' shows as Screening
-    // (advanced past resume); exact Screening-vs-Functional persists once scheduled.
-    status: a.decision === 'hired' ? 'Hired'
-      : a.decision === 'rejected' ? 'Rejected'
-      : a.functional_status ? 'Functional'
-      : (a.screening_status || a.decision === 'shortlisted') ? 'Screening'
-      : 'Resume',
+    status: status,
     source: a.source || 'ATS',
     // Input method for the "Source" column. Prefer the explicit entry_method; fall back
     // to a *labelable* legacy `source` only (scheduled/functional/null → null → "—").
     entryMethod: SOURCE_LABELS[a.entry_method] ? a.entry_method
       : (SOURCE_LABELS[a.source] ? a.source : null),
-    interviewStatus: mapInterviewStatus(a.functional_status),
-    interviewScore: a.functional_score ?? a.overall_interview_score ?? null,
+    interviewStatus: mapInterviewStatus(rawStatus),
+    interviewScore: rawScore ?? a.overall_interview_score ?? null,
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,
     matchScore: a.match_score ?? null,
-    // Stored resume text + analysis flags (ApplicantOut). resumeText hydrates the
-    // analysis cache so "Reanalyse" doesn't need an extra resume-text fetch.
     resumeText: a.resume_text ?? null,
     resumeAnalysed: a.resume_analysed ?? null,
     resumeShortlisted: a.resume_shortlisted ?? null,
     decision: a.decision ?? null,
-    // Recruiter screening result — the backend sends these (ApplicantOut), the
-    // dashboard's report + Deep Analysis read them off the candidate. Without this
-    // mapping the screening block stays blank in api mode even when scored.
     recruiterScreening: a.recruiter_screening ?? null,
     recruiterScreeningScore: a.recruiter_screening_score ?? null,
     screeningStatus: mapInterviewStatus(a.screening_status),
     screeningScore: a.screening_score ?? null,
     attemptedAt: a.attempted_at ?? null,
-    // Rehydrate the stored analysis so a re-opened report shows the saved result
-    // instead of re-scoring from scratch.
     ...(() => { try { const p = a.resume_analysis_report ? JSON.parse(a.resume_analysis_report) : null; return p ? { resumeAnalysis: p } : {}; } catch { return {}; } })(),
     _backend: true,
   };
@@ -562,3 +569,24 @@ function mapFullReportToCandidateReport(data) {
   if (data.evaluated && report && Array.isArray(report.questionBreakdown)) return report;
   return null;
 }
+
+// ── Preferences ──────────────────────────────────────────────────────────────
+// Fetch the signed-in user's saved preferences from the backend.
+// Returns { theme: 'dark'|'light'|'system' }, or null if the request fails.
+export async function apiGetPreferences() {
+  try {
+    return await request('/settings/preferences');
+  } catch {
+    return null;
+  }
+}
+
+// Persist a preference change. Only the fields you pass are updated.
+export async function apiUpdatePreferences(data) {
+  try {
+    return await request('/settings/preferences', { method: 'PUT', body: data });
+  } catch {
+    return null;
+  }
+}
+

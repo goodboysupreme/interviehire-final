@@ -10,6 +10,7 @@ from .internal import InternalCandidateAdapter, ResumeDatabaseAdapter
 from .imports import UploadedCSVAdapter, ManualImportAdapter
 from .web import PublicWebAdapter, ApprovedAPIAdapter
 from .github import GitHubAdapter
+from .hackernews import HackerNewsAdapter
 from .web_search import WebSearchAdapter
 from .disabled import LinkedInAdapter, InternshalaAdapter, NaukriAdapter, IndeedAdapter
 
@@ -20,7 +21,8 @@ REGISTRY: Dict[str, type] = {
     "uploaded_csv": UploadedCSVAdapter,
     "manual_import": ManualImportAdapter,
     "github": GitHubAdapter,            # REAL web sourcing via GitHub's official API (devs)
-    "web_search": WebSearchAdapter,     # general public-web discovery via Brave Search API (any role)
+    "hackernews": HackerNewsAdapter,    # REAL candidates seeking work — official Algolia HN API (keyless)
+    "web_search": WebSearchAdapter,     # general public-web discovery (DuckDuckGo keyless fallback / Google CSE / SearXNG / Brave)
     "public_web": PublicWebAdapter,
     "approved_api": ApprovedAPIAdapter,
     # restricted placeholders (always disabled — compliant ingest = official API / export):

@@ -21,6 +21,90 @@ import { AppState } from './state.js';
 import { activeCandidateSubTabs } from './vetting-data.js';
 import { getDataSource, isApiMode, apiScheduleCandidate, apiUpdateApplicant, apiMoveApplicantStage, ensureBackendApplicantId, apiUploadResumes } from './api.js';
 
+function getCandidateSubtab(c) {
+  const status = c.interviewStatus;
+  if (status === 'Slot Missed') {
+    return 'window-missed';
+  }
+  if (status === 'Completed') {
+    return 'completed';
+  }
+  if (status === 'Incomplete' || status === 'Evaluating' || status === 'Attempting') {
+    return 'partially-completed';
+  }
+  return 'scheduled';
+}
+
+function getOrInitActiveSubtab(stageKey, cands) {
+  const counts = {
+    'window-missed': 0,
+    'scheduled': 0,
+    'partially-completed': 0,
+    'completed': 0
+  };
+  cands.forEach(c => {
+    counts[getCandidateSubtab(c)]++;
+  });
+
+  const stateKey = stageKey === 'screening' ? 'activeScreeningSubtab' : 'activeFunctionalSubtab';
+  
+  if (AppState[stateKey] && counts[AppState[stateKey]] > 0) {
+    return AppState[stateKey];
+  }
+  
+  const order = ['window-missed', 'scheduled', 'partially-completed', 'completed'];
+  for (const tab of order) {
+    if (counts[tab] > 0) {
+      AppState[stateKey] = tab;
+      return tab;
+    }
+  }
+  
+  AppState[stateKey] = 'scheduled';
+  return 'scheduled';
+}
+
+function buildSubtabsBarHTML(stageKey, counts, activeSubtab) {
+  const tabs = [
+    {
+      id: 'window-missed',
+      label: 'Window Missed',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`
+    },
+    {
+      id: 'scheduled',
+      label: 'Scheduled',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`
+    },
+    {
+      id: 'partially-completed',
+      label: 'Partially Completed',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>`
+    },
+    {
+      id: 'completed',
+      label: 'Completed',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`
+    }
+  ];
+
+  return `
+    <div class="stage-subtabs-bar" data-stage="${stageKey}">
+      ${tabs.map(tab => {
+        const isActive = tab.id === activeSubtab ? 'active' : '';
+        const count = counts[tab.id] || 0;
+        return `
+          <button class="stage-subtab-btn ${isActive}" data-subtab="${tab.id}" data-stage="${stageKey}">
+            ${tab.icon}
+            <span>${tab.label}</span>
+            <span class="subtab-count">${count}</span>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
 function renderJobDetailPanes(job) {
   const searchVal = document.getElementById('jd-candidate-search').value.trim().toLowerCase();
   
@@ -183,9 +267,24 @@ function renderJobDetailPanes(job) {
   if (screeningList) {
     const screeningCands = jobCandidates.filter(c => c.status === 'Screening');
     const addApplicantsHTML = buildAddApplicantsPanel('screening', screeningCands.length);
+
+    const counts = {
+      'window-missed': 0,
+      'scheduled': 0,
+      'partially-completed': 0,
+      'completed': 0
+    };
+    screeningCands.forEach(c => {
+      counts[getCandidateSubtab(c)]++;
+    });
+
+    const activeSubtab = getOrInitActiveSubtab('screening', screeningCands);
+    const subtabsHTML = buildSubtabsBarHTML('screening', counts, activeSubtab);
+
     if (screeningCands.length === 0) {
       screeningList.innerHTML = `
         ${addApplicantsHTML}
+        ${subtabsHTML}
         <div class="jd-empty-pane">
           <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
           <p>Recruiter Screening — No candidates in this stage</p>
@@ -193,10 +292,12 @@ function renderJobDetailPanes(job) {
       `;
     } else {
       const allScreeningCands = screeningCands;
-      const displayScreeningCands = applyStageFilters(screeningCands, 'screening');
+      const subtabFilteredCands = screeningCands.filter(c => getCandidateSubtab(c) === activeSubtab);
+      const displayScreeningCands = applyStageFilters(subtabFilteredCands, 'screening');
       const sf = AppState.stageFilters.screening;
       screeningList.innerHTML = `
         ${addApplicantsHTML}
+        ${subtabsHTML}
         <div class="stage-table-container">
           <div class="stage-table-filters">
             <span class="filter-chip" data-filter="interviewStatus" data-stage="screening">${sf.interviewStatus.length ? '⊗' : '⊕'} Interview Status ${sf.interviewStatus.length ? `<span class="filter-chip-val">${sf.interviewStatus.join(', ')}</span>` : ''}</span>
@@ -277,9 +378,24 @@ function renderJobDetailPanes(job) {
   if (functionalList) {
     const functionalCands = jobCandidates.filter(c => c.status === 'Functional');
     const addApplicantsFnHTML = buildAddApplicantsPanel('functional', functionalCands.length);
+
+    const countsFn = {
+      'window-missed': 0,
+      'scheduled': 0,
+      'partially-completed': 0,
+      'completed': 0
+    };
+    functionalCands.forEach(c => {
+      countsFn[getCandidateSubtab(c)]++;
+    });
+
+    const activeSubtabFn = getOrInitActiveSubtab('functional', functionalCands);
+    const subtabsFnHTML = buildSubtabsBarHTML('functional', countsFn, activeSubtabFn);
+
     if (functionalCands.length === 0) {
       functionalList.innerHTML = `
         ${addApplicantsFnHTML}
+        ${subtabsFnHTML}
         <div class="jd-empty-pane">
           <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>
           <p>Functional Interview — No candidates in this stage</p>
@@ -305,10 +421,12 @@ function renderJobDetailPanes(job) {
       };
 
       const allFunctionalCands = functionalCands;
-      const displayFunctionalCands = applyStageFilters(functionalCands, 'functional');
+      const subtabFilteredFnCands = functionalCands.filter(c => getCandidateSubtab(c) === activeSubtabFn);
+      const displayFunctionalCands = applyStageFilters(subtabFilteredFnCands, 'functional');
       const ff = AppState.stageFilters.functional;
       functionalList.innerHTML = `
         ${addApplicantsFnHTML}
+        ${subtabsFnHTML}
         <div class="stage-table-container">
           <div class="stage-table-filters">
             <span class="filter-chip" data-filter="interviewStatus" data-stage="functional">${ff.interviewStatus.length ? '⊗' : '⊕'} Interview Status ${ff.interviewStatus.length ? `<span class="filter-chip-val">${ff.interviewStatus.join(', ')}</span>` : ''}</span>
@@ -404,6 +522,17 @@ function renderJobDetailPanes(job) {
   // Bind actions
   const pane = document.getElementById('view-job-detail');
   if (pane) {
+    pane.querySelectorAll('.stage-subtab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        soundEngine.playClick();
+        const stage = btn.getAttribute('data-stage');
+        const subtab = btn.getAttribute('data-subtab');
+        const stateKey = stage === 'screening' ? 'activeScreeningSubtab' : 'activeFunctionalSubtab';
+        AppState[stateKey] = subtab;
+        renderJobDetailPanes(job);
+      });
+    });
+
     pane.querySelectorAll('.subtab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const candId = btn.parentElement.getAttribute('data-cand-id');
@@ -793,18 +922,15 @@ function renderJobDetailPanes(job) {
       }
     });
   }
-  // Wire the Add-Applicants upload panels rendered into the Screening/Functional
-  // stage lists. buildAddApplicantsPanel injects the markup; without these bind
-  // calls the button, dropzone, file picker, and Import are inert. Source values:
-  // 'scheduled' → Recruiter Screening, 'functional' → Functional Interview.
+  // Wire the Add-Applicants header buttons to redirect to the Sourcing view with stage context.
   if (document.getElementById('list-stage-resume')) {
-    bindAddApplicantsPanel(job, 'resume', null, 'Resume Analysis');
+    bindAddApplicantsPanel(job, 'resume');
   }
   if (document.getElementById('list-stage-screening')) {
-    bindAddApplicantsPanel(job, 'screening', 'scheduled', 'Recruiter Screening');
+    bindAddApplicantsPanel(job, 'screening');
   }
   if (document.getElementById('list-stage-functional')) {
-    bindAddApplicantsPanel(job, 'functional', 'functional', 'Functional Interview');
+    bindAddApplicantsPanel(job, 'functional');
   }
 
   renderBlueprintStudio(job);
@@ -921,8 +1047,8 @@ function updateCandidateStatus(candId, newStatus) {
 export { renderJobDetailPanes, updateCandidateStatus };
 
 // ── Add Applicants panel: shared HTML builder ────────────────────────────────
-// Builds an inline upload panel header + collapsible dropzone for any stage.
-// `paneKey` is 'screening' or 'functional' (used as HTML id prefix).
+// Builds a clean header section with a '+ Add Applicants' button that redirects to Sourcing.
+// `paneKey` is 'resume', 'screening', or 'functional'.
 function buildAddApplicantsPanel(paneKey, count) {
   const label = paneKey === 'screening' ? 'Recruiter Screening'
               : paneKey === 'functional' ? 'Functional Interview'
@@ -933,35 +1059,10 @@ function buildAddApplicantsPanel(paneKey, count) {
         <h3 class="ra-candidates-title">Candidates in ${label}</h3>
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="ra-candidates-count">${count} candidate${count !== 1 ? 's' : ''}</span>
-          <button id="btn-add-applicants-${paneKey}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;font-size:0.78rem;font-weight:500;color:var(--color-gold);background:rgba(var(--color-gold-rgb),0.08);border:1px solid rgba(var(--color-gold-rgb),0.2);cursor:pointer;transition:all 0.2s ease;font-family:var(--font-body);">
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            Add Applicants
+          <button class="btn-jd-primary btn-add-applicants-stage" id="btn-add-applicants-${paneKey}" data-stage="${paneKey}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            + Add Applicants
           </button>
-        </div>
-      </div>
-      <div id="add-applicants-panel-${paneKey}" style="display:none;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:20px;margin-bottom:16px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-          <div>
-            <h4 style="margin:0;font-size:0.9rem;font-weight:700;color:var(--color-text-primary);font-family:var(--font-display);">Upload Applicant Resumes</h4>
-            <p style="margin:4px 0 0;font-size:0.75rem;color:var(--color-text-muted);">Upload PDF, DOCX, or ZIP files — candidates land directly in ${label}</p>
-          </div>
-          <button id="btn-add-panel-close-${paneKey}" style="background:none;border:none;color:var(--color-text-faint);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-        </div>
-        <div id="dropzone-${paneKey}" style="border:2px dashed var(--glass-border);border-radius:10px;padding:36px;text-align:center;cursor:pointer;transition:all 0.2s ease;background:rgba(255,255,255,0.02);">
-          <input type="file" id="file-input-${paneKey}" multiple accept=".pdf,.doc,.docx,.txt,.zip" hidden>
-          <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 10px;display:block;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-          <p style="margin:0;font-size:0.88rem;font-weight:600;color:var(--color-text-primary);">Drop resumes here</p>
-          <p style="margin:6px 0 0;font-size:0.75rem;color:var(--color-text-muted);">or <span id="browse-link-${paneKey}" style="color:var(--color-gold);cursor:pointer;text-decoration:underline;">browse files</span> — PDF, DOCX, ZIP</p>
-        </div>
-        <div id="files-preview-${paneKey}" style="display:none;margin-top:12px;">
-          <div style="font-size:0.78rem;color:var(--color-text-muted);margin-bottom:8px;"><span id="files-count-${paneKey}">0</span> file(s) selected</div>
-          <div id="files-list-${paneKey}" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;"></div>
-          <div style="display:flex;gap:10px;margin-top:14px;">
-            <button id="btn-import-${paneKey}" disabled style="flex:1;padding:9px 16px;border-radius:9px;border:1px solid rgba(var(--color-gold-rgb),0.3);background:rgba(var(--color-gold-rgb),0.1);color:var(--color-gold);font-size:0.82rem;font-weight:600;cursor:pointer;font-family:var(--font-body);transition:all 0.2s ease;">Import to ${label}</button>
-            <button id="btn-cancel-${paneKey}" style="padding:9px 16px;border-radius:9px;border:1px solid var(--glass-border);background:rgba(255,255,255,0.04);color:var(--color-text-muted);font-size:0.82rem;cursor:pointer;font-family:var(--font-body);transition:all 0.2s ease;">Cancel</button>
-          </div>
         </div>
       </div>
     </div>
@@ -969,153 +1070,16 @@ function buildAddApplicantsPanel(paneKey, count) {
 }
 
 // ── Add Applicants panel: event wiring ──────────────────────────────────────
-// `source` is the ApplicantSource enum value to send: 'scheduled'→Screening,
-// 'functional'→Functional. `targetStage` is the display name for toasts.
-function bindAddApplicantsPanel(job, paneKey, source, targetStage) {
-  let uploadedFiles = [];
-  let isImporting = false;
-
-  const addBtn    = document.getElementById(`btn-add-applicants-${paneKey}`);
-  const panel     = document.getElementById(`add-applicants-panel-${paneKey}`);
-  const closeBtn  = document.getElementById(`btn-add-panel-close-${paneKey}`);
-  const dropzone  = document.getElementById(`dropzone-${paneKey}`);
-  const fileInput = document.getElementById(`file-input-${paneKey}`);
-  const browseLink = document.getElementById(`browse-link-${paneKey}`);
-  const previewBox = document.getElementById(`files-preview-${paneKey}`);
-  const filesList = document.getElementById(`files-list-${paneKey}`);
-  const countSpan = document.getElementById(`files-count-${paneKey}`);
-  const importBtn = document.getElementById(`btn-import-${paneKey}`);
-  const cancelBtn = document.getElementById(`btn-cancel-${paneKey}`);
-
-  if (!addBtn || !panel) return;
-
-  const closePanel = () => { panel.style.display = 'none'; };
-  const openPanel  = () => { panel.style.display = 'block'; };
-
-  addBtn.addEventListener('click', () => {
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    soundEngine.playClick();
-  });
-  closeBtn?.addEventListener('click', () => { closePanel(); soundEngine.playClick(); });
-
-  const openPicker = () => fileInput?.click();
-  browseLink?.addEventListener('click', (e) => { e.stopPropagation(); openPicker(); });
-  dropzone?.addEventListener('click', (e) => { if (e.target !== browseLink) openPicker(); });
-
-  dropzone?.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropzone.style.borderColor = 'var(--color-gold)';
-    dropzone.style.background = 'rgba(var(--color-gold-rgb),0.04)';
-  });
-  dropzone?.addEventListener('dragleave', () => {
-    dropzone.style.borderColor = 'var(--glass-border)';
-    dropzone.style.background = 'rgba(255,255,255,0.02)';
-  });
-  dropzone?.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropzone.style.borderColor = 'var(--glass-border)';
-    dropzone.style.background = 'rgba(255,255,255,0.02)';
-    const files = Array.from(e.dataTransfer.files).filter(f => /\.(pdf|docx?|txt|zip)$/i.test(f.name));
-    if (files.length > 0) enqueueFiles(files);
-  });
-
-  fileInput?.addEventListener('change', (e) => {
-    if (!e.target.files.length) return;
-    enqueueFiles(Array.from(e.target.files));
-    e.target.value = '';
-  });
-
-  cancelBtn?.addEventListener('click', () => {
-    uploadedFiles = [];
-    if (filesList) filesList.innerHTML = '';
-    if (previewBox) previewBox.style.display = 'none';
-    if (importBtn) importBtn.disabled = true;
-    soundEngine.playClick();
-  });
-
-  importBtn?.addEventListener('click', async () => {
-    if (isImporting || uploadedFiles.length === 0) return;
-    if (!isApiMode()) {
-      showPremiumToast('Switch to API mode to import resumes.', 'info');
-      return;
-    }
-    isImporting = true;
-    importBtn.disabled = true;
-    importBtn.textContent = 'Importing…';
-
-    try {
-      const newCands = await apiUploadResumes(job.id, uploadedFiles.map(f => f.file), source);
-      // Merge new candidates into AppState without losing others
-      const others = (AppState.candidates || []).filter(c => c.jobId !== job.id);
-      const existing = (AppState.candidates || []).filter(c => c.jobId === job.id);
-      const existingIds = new Set(existing.map(c => c.id));
-      const merged = [...existing];
-      newCands.forEach(nc => {
-        nc.jobApplied = job.roleName;
-        nc.jobId = job.id;
-        if (!existingIds.has(nc.id)) merged.push(nc);
-      });
-      AppState.candidates = [...others, ...merged];
-      soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
-      showPremiumToast(`Imported ${newCands.length} candidate(s) into ${targetStage}.`, 'success');
-      uploadedFiles = [];
-      closePanel();
-      refreshAfterStageChange();
-    } catch (err) {
-      console.error('Upload failed:', err);
-      showPremiumToast(`Upload failed: ${err.message}`, 'error');
-    } finally {
-      isImporting = false;
-      if (importBtn) {
-        importBtn.disabled = false;
-        importBtn.textContent = `Import to ${targetStage}`;
-      }
-    }
-  });
-
-  function enqueueFiles(files) {
-    if (!previewBox || !filesList || !countSpan || !importBtn) return;
-    previewBox.style.display = 'block';
-    importBtn.disabled = true;
-
-    const startIdx = uploadedFiles.length;
-    files.forEach((file, i) => {
-      const idx = startIdx + i;
-      const item = { file, status: 'parsing' };
-      uploadedFiles.push(item);
-
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);border-radius:8px;';
-      row.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-        <span style="flex:1;font-size:0.8rem;color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(file.name)}</span>
-        <span style="font-size:0.72rem;color:var(--color-text-muted);">${(file.size / 1024).toFixed(1)} KB</span>
-        <span id="status-${paneKey}-${idx}" style="font-size:0.7rem;padding:2px 8px;border-radius:10px;background:rgba(var(--color-gold-rgb),0.1);color:var(--color-gold);white-space:nowrap;">Queued</span>
-      `;
-      filesList.appendChild(row);
-
-      // Simulate a progress animation while the real upload happens on click
-      let ticks = 0;
-      const iv = setInterval(() => {
-        ticks++;
-        const badge = document.getElementById(`status-${paneKey}-${idx}`);
-        if (!badge) { clearInterval(iv); return; }
-        if (ticks > 8) {
-          clearInterval(iv);
-          badge.textContent = 'Ready';
-          badge.style.background = 'rgba(34,197,94,0.12)';
-          badge.style.color = '#22c55e';
-          item.status = 'done';
-          if (uploadedFiles.every(f => f.status === 'done')) {
-            if (importBtn) importBtn.disabled = false;
-            soundEngine.playChime([523.25, 659.25], 0.12, 0.08);
-          }
-        } else {
-          badge.textContent = 'Parsing…';
-        }
-      }, 180 + Math.random() * 120);
+// Overridden to redirect to the main Sourcing view with the target stage context.
+function bindAddApplicantsPanel(job, paneKey) {
+  const addBtn = document.getElementById(`btn-add-applicants-${paneKey}`);
+  if (addBtn) {
+    addBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      import('./sourcing.js').then(({ navigateToSourcing }) => {
+        navigateToSourcing(job.id, paneKey);
+      }).catch(err => console.error(err));
     });
-
-    countSpan.textContent = uploadedFiles.length;
   }
 }
+

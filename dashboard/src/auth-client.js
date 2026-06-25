@@ -11,8 +11,11 @@
 const LS_TOKEN = 'IntervieHire_auth_token';
 
 // Base URL: env override (NEXT_PUBLIC_API_URL) → default local FastAPI.
-export const API_BASE = (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_URL)
-  || 'http://localhost:8000/api';
+// NOTE: reference process.env.NEXT_PUBLIC_API_URL DIRECTLY so Next.js inlines the
+// configured value into the browser bundle. A `typeof process` guard here gets
+// dead-code-eliminated in the client build (process is undefined in the browser),
+// which silently dropped the configured URL and fell back to localhost in prod.
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
 function setAuthed(v) { try { v ? localStorage.setItem(LS_TOKEN, '1') : localStorage.removeItem(LS_TOKEN); } catch {} }
 export const isAuthed = () => { try { return localStorage.getItem(LS_TOKEN) === '1'; } catch { return false; } };

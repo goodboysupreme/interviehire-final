@@ -1,0 +1,179 @@
+# InterviewHire API Reference
+
+> **Base URL:** `https://interviehire.com/api` (prod) · `http://localhost:8000/api` (local)  
+> All endpoints require an authenticated session (httponly `token` cookie set by `/auth/login`).
+
+---
+
+## Applicant Management
+
+### `POST /jobs/{job_id}/applicants`
+Add a single applicant to a job.
+
+**Request body (`AddApplicantIn`):**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | `string` | ✅ | Candidate's full name |
+| `email` | `EmailStr` | ✅ | Candidate's email address |
+| `phone` | `string` | ❌ | Phone number |
+| `source` | `ApplicantSource` | ❌ | Controls which pipeline stage the candidate enters (see table below) |
+
+**`source` values and their effect:**
+| `source` value | Pipeline stage entered | DB field set |
+|---|---|---|
+| `scheduled` | Recruiter Screening | `screening_status = pending` |
+| `functional` | Functional Interview | `functional_status = pending` |
+| `bulk_upload` | Resume Analysis | (none — awaits analysis) |
+| `career_page` | Resume Analysis | (none) |
+| `direct_link` | Resume Analysis | (none) |
+| `ats` | Resume Analysis | (none) |
+
+**Response:** `ApplicantOut` — the created applicant record.
+
+---
+
+### `POST /jobs/{job_id}/applicants/bulk`
+Add multiple applicants to a job in a single request.
+
+**Request body (`BulkApplicantsIn`):**
+```json
+{
+  "applicants": [
+    { "name": "Alice Kumar", "email": "alice@example.com", "source": "scheduled" },
+    { "name": "Bob Rao",   "email": "bob@example.com",   "source": "functional" }
+  ]
+}
+```
+Each item in `applicants` is an `AddApplicantIn` object (same fields as above).
+
+**Response:** `List[ApplicantOut]`
+
+> **Stage routing:** Pass the correct `source` value per candidate to control which stage they land in. The frontend sourcing view sets this automatically based on which job-detail tab the recruiter was viewing when they clicked "+ Add Applicants".
+
+---
+
+### `POST /jobs/{job_id}/applicants/upload-resumes`
+Upload resume files (PDF, DOCX, ZIP) for bulk-import.
+
+**Query param:** `source` (optional) — same `ApplicantSource` enum as above.  
+**Request body:** `multipart/form-data` with one or more `files` fields.  
+**Response:** `List[ApplicantOut]`
+
+---
+
+### `PATCH /jobs/applicants/{applicant_id}`
+Update applicant fields (score, status, report, decision, etc.).
+
+**Request body (`ApplicantUpdateIn`):** All fields optional.
+
+| Field | Type | Description |
+|---|---|---|
+| `screening_status` | `InterviewStatus` | `pending \| scheduled \| completed \| slot_missed \| incomplete` |
+| `screening_score` | `float` | Score from recruiter screening |
+| `functional_status` | `InterviewStatus` | Status in functional interview |
+| `functional_score` | `float` | Score from functional interview |
+| `resume_shortlisted` | `bool` | Whether shortlisted at resume stage |
+| `resume_waitlisted` | `bool` | Whether waitlisted at resume stage |
+| `decision` | `string` | `shortlisted \| on_hold \| rejected \| hired` |
+| `match_score` | `float` | Overall resume match score |
+| `resume_analysis_report` | `string` | JSON/text of resume analysis |
+| `recruiter_screening` | `string` | Recruiter's screening result label |
+| `recruiter_screening_score` | `float` | Score from recruiter screening call |
+
+---
+
+### `GET /jobs/{job_id}/responses?tab={tab}`
+Fetch applicants for a job filtered by pipeline stage.
+
+**Query param `tab`:** `all` · `resume` · `screening` · `functional`  
+**Response:** `List[ApplicantOut]`
+
+---
+
+## User Preferences (Theme)
+
+### `GET /api/settings/preferences`
+Returns the logged-in user's preferences.
+
+**Response:**
+```json
+{ "theme": "dark" }
+```
+
+### `PUT /api/settings/preferences`
+Persist the user's theme preference (cross-device).
+
+**Request body:**
+```json
+{ "theme": "light" }
+```
+Allowed values: `"light"` · `"dark"` · `"system"`  
+**Response:** `{ "theme": "light" }`
+
+> **Implementation note:** Theme is also mirrored to `localStorage['IntervieHire-theme']` for instant application before the API response returns. The DB (`user_preferences` table) is the source of truth across devices.
+
+---
+
+## Auth
+
+### `POST /auth/login`
+```json
+{ "email": "...", "password": "..." }
+```
+Sets `token` httponly cookie. Returns `{ "onboarding_required": bool }`.
+
+### `POST /auth/signup`
+```json
+{ "name": "...", "email": "...", "password": "..." }
+```
+Returns `{ "onboarding_required": bool }`. If `true`, redirect to `/onboarding`.
+
+### `POST /auth/onboarding`
+Complete org setup after signup.
+```json
+{
+  "org_name": "Acme Corp",
+  "domain": "acme.com",
+  "contact_email": "hr@acme.com",
+  "location": "Bengaluru, India"
+}
+```
+
+### `GET /auth/me`
+Returns current user info: `id`, `email`, `name`, `role`, `onboarding_required`, `organisation_id`.
+
+### `POST /auth/logout`
+Clears the session cookie.
+
+---
+
+## Jobs
+
+### `GET /jobs`  
+List all jobs for the active organisation.
+
+### `POST /jobs`  
+Create a new job.
+
+### `GET /jobs/{job_id}`  
+Fetch a single job with its parameters.
+
+### `PATCH /jobs/{job_id}/parameters`  
+Persist job blueprint (screening questions, functional parameters, scoring config).
+
+---
+
+## ApplicantSource Enum Reference
+
+```
+career_page   — Candidate applied via public career page
+bulk_upload   — Imported via CSV or resume upload (no interview queued)
+direct_link   — Applied via a direct share link
+scheduled     — Added directly to Recruiter Screening stage
+functional    — Added directly to Functional Interview stage
+ats           — Imported from external ATS
+```
+
+---
+
+*Last updated: June 2025*
