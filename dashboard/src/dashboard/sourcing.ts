@@ -11,6 +11,12 @@ import { AppState, defaultInterviewSettings } from './state';
 import { pushUrl } from './url-sync';
 import { isApiMode, apiAddApplicant, apiUpdateApplicant, apiUploadResumes, scheduleJobSave } from './api';
 import { saveStateToLocalStorage } from './ai-api';
+import type { Job, Candidate } from '../types/models';
+
+// `localIds` is referenced by importCsvCandidates / importManualQueue but is not
+// declared in those scopes (pre-existing). This ambient (type-only) declaration
+// lets the file type-check while emitting NO JS, so runtime stays byte-identical.
+declare const localIds: string[];
 
 // ============================================================
 // SOURCING VIEW CONTROLLER & MASS INTAKE LOGIC
@@ -66,7 +72,7 @@ function initSourcing() {
       if (typeof window.navigateToJobStage === 'function') {
         window.navigateToJobStage(AppState.activeJobId, 'overview');
       } else {
-        navigateToJobDetail(AppState.activeJobId);
+        navigateToJobDetail(AppState.activeJobId!);
       }
     });
   }
@@ -75,7 +81,7 @@ function initSourcing() {
   const viewResponsesBtn = document.getElementById('btn-src-view-responses');
   if (viewResponsesBtn) {
     viewResponsesBtn.addEventListener('click', () => {
-      navigateToJobDetail(AppState.activeJobId);
+      navigateToJobDetail(AppState.activeJobId!);
     });
   }
 
@@ -225,12 +231,12 @@ function initSourcing() {
   if (btnCsvCancel) {
     btnCsvCancel.addEventListener('click', () => {
       csvParsedCandidates = [];
-      document.getElementById('csv-preview-box').style.display = 'none';
+      (document.getElementById('csv-preview-box') as HTMLElement).style.display = 'none';
       if (inputFileCsv) inputFileCsv.value = '';
       soundEngine.playClick();
       const dropzone = document.getElementById('dropzone-csv');
       if (dropzone) dropzone.style.display = '';
-      const footer = dropzone ? dropzone.parentElement.querySelector('.sourcing-panel-footer') : null;
+      const footer = dropzone ? dropzone.parentElement!.querySelector('.sourcing-panel-footer') as HTMLElement | null : null;
       if (footer) footer.style.display = '';
     });
   }
@@ -282,12 +288,12 @@ function initSourcing() {
   if (btnResumesCancel) {
     btnResumesCancel.addEventListener('click', () => {
       uploadedFiles = [];
-      document.getElementById('resumes-preview-box').style.display = 'none';
+      (document.getElementById('resumes-preview-box') as HTMLElement).style.display = 'none';
       if (inputFileResumes) inputFileResumes.value = '';
       soundEngine.playClick();
       const dropzone = document.getElementById('dropzone-resumes');
       if (dropzone) dropzone.style.display = '';
-      const footer = dropzone ? dropzone.parentElement.querySelector('.sourcing-panel-footer') : null;
+      const footer = dropzone ? dropzone.parentElement!.querySelector('.sourcing-panel-footer') as HTMLElement | null : null;
       if (footer) footer.style.display = '';
     });
   }
@@ -344,15 +350,15 @@ function initSourcing() {
       soundEngine.playClick();
     });
     document.addEventListener('click', (e) => {
-      if (!e.target.closest('#analytics-date-range-wrap')) analyticsDrDrop.classList.remove('open');
+      if (!(e.target as HTMLElement)?.closest('#analytics-date-range-wrap')) analyticsDrDrop.classList.remove('open');
     });
     analyticsDrDrop.querySelectorAll('.dr-preset').forEach(btn => {
       btn.addEventListener('click', () => {
         analyticsDrDrop.querySelectorAll('.dr-preset').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        AppState.dateRange = btn.getAttribute('data-range');
-        document.getElementById('analytics-daterange-label').textContent = btn.textContent;
-        if (dateRangeSelect) dateRangeSelect.value = AppState.dateRange;
+        AppState.dateRange = btn.getAttribute('data-range') as string;
+        (document.getElementById('analytics-daterange-label') as HTMLElement).textContent = btn.textContent;
+        if (dateRangeSelect) (dateRangeSelect as HTMLSelectElement).value = AppState.dateRange;
         const jdLabel = document.getElementById('jd-daterange-label');
         if (jdLabel) jdLabel.textContent = btn.textContent;
         const jdDrop = document.getElementById('jd-daterange-dropdown');
@@ -372,10 +378,10 @@ function initSourcing() {
   if (dateFrom && dateTo && drApply) {
     drApply.addEventListener('click', () => {
       AppState.dateRange = 'custom';
-      AppState.customDateFrom = dateFrom.value;
-      AppState.customDateTo = dateTo.value;
-      if (dateRangeSelect) dateRangeSelect.value = 'custom';
-      document.getElementById('analytics-daterange-label').textContent = 'Custom Range';
+      (AppState as any).customDateFrom = (dateFrom as HTMLInputElement).value;
+      (AppState as any).customDateTo = (dateTo as HTMLInputElement).value;
+      if (dateRangeSelect) (dateRangeSelect as HTMLSelectElement).value = 'custom';
+      (document.getElementById('analytics-daterange-label') as HTMLElement).textContent = 'Custom Range';
       if (analyticsDrDrop) {
         analyticsDrDrop.querySelectorAll('.dr-preset').forEach(b => b.classList.remove('active'));
         analyticsDrDrop.classList.remove('open');
@@ -395,17 +401,17 @@ function initSourcing() {
       soundEngine.playClick();
     });
     document.addEventListener('click', (e) => {
-      if (!e.target.closest('#jd-date-range-wrap')) jdDrDrop.classList.remove('open');
+      if (!(e.target as HTMLElement)?.closest('#jd-date-range-wrap')) jdDrDrop.classList.remove('open');
     });
     jdDrDrop.querySelectorAll('.jd-dr-preset').forEach(btn => {
       btn.addEventListener('click', () => {
         jdDrDrop.querySelectorAll('.jd-dr-preset').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        AppState.dateRange = btn.getAttribute('data-range');
-        document.getElementById('jd-daterange-label').textContent = btn.textContent;
+        AppState.dateRange = btn.getAttribute('data-range') as string;
+        (document.getElementById('jd-daterange-label') as HTMLElement).textContent = btn.textContent;
         // sync analytics bar dropdown
         const sel = document.getElementById('date-range-select');
-        if (sel) sel.value = AppState.dateRange;
+        if (sel) (sel as HTMLSelectElement).value = AppState.dateRange;
         soundEngine.playClick();
         applyDateRangeGlobally();
         jdDrDrop.classList.remove('open');
@@ -418,16 +424,16 @@ function initSourcing() {
         inp.addEventListener('change', () => {
           jdDrDrop.querySelectorAll('.jd-dr-preset').forEach(b => b.classList.remove('active'));
           AppState.dateRange = 'custom';
-          AppState.customDateFrom = jdDateFrom.value;
-          AppState.customDateTo = jdDateTo.value;
-          document.getElementById('jd-daterange-label').textContent = 'Custom';
+          (AppState as any).customDateFrom = (jdDateFrom as HTMLInputElement).value;
+          (AppState as any).customDateTo = (jdDateTo as HTMLInputElement).value;
+          (document.getElementById('jd-daterange-label') as HTMLElement).textContent = 'Custom';
           // sync analytics bar dropdown
           const sel2 = document.getElementById('date-range-select');
-          if (sel2) sel2.value = 'custom';
+          if (sel2) (sel2 as HTMLSelectElement).value = 'custom';
           const drc = document.getElementById('date-range-custom');
           if (drc) drc.style.display = 'flex';
-          if (document.getElementById('date-from')) document.getElementById('date-from').value = jdDateFrom.value;
-          if (document.getElementById('date-to')) document.getElementById('date-to').value = jdDateTo.value;
+          if (document.getElementById('date-from')) (document.getElementById('date-from') as HTMLInputElement).value = (jdDateFrom as HTMLInputElement).value;
+          if (document.getElementById('date-to')) (document.getElementById('date-to') as HTMLInputElement).value = (jdDateTo as HTMLInputElement).value;
           soundEngine.playClick();
           applyDateRangeGlobally();
         });
@@ -453,11 +459,11 @@ function initSourcing() {
   }
 }
 
-function navigateToSourcing(jobId, targetStage = null) {
+function navigateToSourcing(jobId: string | null | undefined, targetStage: string | null = null) {
   const job = AppState.jobs.find(j => j.id === jobId);
   if (!job) return;
 
-  AppState.activeJobId = jobId;
+  (AppState as any).activeJobId = jobId;
   AppState.activeTab = 'sourcing';
   // Store the target stage so all import functions know where candidates land.
   currentTargetStage = targetStage;
@@ -480,7 +486,7 @@ function navigateToSourcing(jobId, targetStage = null) {
   const stageLabel = document.getElementById('sourcing-stage-label');
   if (stageCtx && stageLabel) {
     if (targetStage) {
-      const stageNames = { resume: 'Resume Analysis', screening: 'Recruiter Screening', functional: 'Functional Interview' };
+      const stageNames: Record<string, string> = { resume: 'Resume Analysis', screening: 'Recruiter Screening', functional: 'Functional Interview' };
       stageLabel.textContent = stageNames[targetStage] || targetStage;
       stageCtx.style.display = 'flex';
     } else {
@@ -490,7 +496,7 @@ function navigateToSourcing(jobId, targetStage = null) {
 
   // Switch view section visibility
   document.querySelectorAll('.dashboard-view').forEach(v => v.classList.remove('active-view'));
-  document.getElementById('view-sourcing').classList.add('active-view');
+  (document.getElementById('view-sourcing') as HTMLElement).classList.add('active-view');
 
   // Hide the global page header action button
   const actionBtn = document.getElementById('header-action-btn');
@@ -501,15 +507,15 @@ function navigateToSourcing(jobId, targetStage = null) {
   csvParsedCandidates = [];
   uploadedFiles = [];
   renderManualQueue();
-  document.getElementById('csv-preview-box').style.display = 'none';
-  document.getElementById('resumes-preview-box').style.display = 'none';
+  (document.getElementById('csv-preview-box') as HTMLElement).style.display = 'none';
+  (document.getElementById('resumes-preview-box') as HTMLElement).style.display = 'none';
 
-  const formManual = document.getElementById('form-manual-candidate');
+  const formManual = document.getElementById('form-manual-candidate') as HTMLFormElement | null;
   if (formManual) formManual.reset();
 
-  const fileCsv = document.getElementById('input-file-csv');
+  const fileCsv = document.getElementById('input-file-csv') as HTMLInputElement | null;
   if (fileCsv) fileCsv.value = '';
-  const fileRes = document.getElementById('input-file-resumes');
+  const fileRes = document.getElementById('input-file-resumes') as HTMLInputElement | null;
   if (fileRes) fileRes.value = '';
 
   // Default mode & tab
@@ -530,8 +536,8 @@ function navigateToSourcing(jobId, targetStage = null) {
   soundEngine.playChime([329.63, 392.00, 523.25], 0.15, 0.08);
 }
 
-function switchSourcingMode(mode) {
-  currentSourcingMode = mode;
+function switchSourcingMode(mode: string | null) {
+  currentSourcingMode = mode as string;
 
   // Toggle active class on pills
   const modeButtons = document.querySelectorAll('.mode-toggle-btn');
@@ -552,8 +558,8 @@ function switchSourcingMode(mode) {
   soundEngine.playClick();
 }
 
-function switchSourcingTab(tab) {
-  currentSourcingTab = tab;
+function switchSourcingTab(tab: string | null) {
+  currentSourcingTab = tab as string;
 
   // Toggle card active states
   const tabCards = document.querySelectorAll('.sourcing-tab-card');
@@ -564,11 +570,12 @@ function switchSourcingTab(tab) {
 
   // Toggle active workspace panel visibility
   const panels = document.querySelectorAll('.sourcing-panel');
-  panels.forEach(panel => {
-    const panelId = panel.id;
+  panels.forEach((panel) => {
+    const panelEl = panel as HTMLElement;
+    const panelId = panelEl.id;
     const isActive = panelId === `panel-src-${tab}`;
-    panel.classList.toggle('active', isActive);
-    panel.style.display = isActive ? 'block' : 'none';
+    panelEl.classList.toggle('active', isActive);
+    panelEl.style.display = isActive ? 'block' : 'none';
   });
 
   setTimeout(updateAllSlidingPills, 50);
@@ -590,26 +597,26 @@ function downloadCsvTemplate() {
   soundEngine.playClick();
 }
 
-function handleCsvFileSelect(event) {
-  const file = event.target.files[0];
+function handleCsvFileSelect(event: Event) {
+  const file = (event.target as HTMLInputElement).files![0];
   if (!file) return;
   parseCsvFile(file);
 }
 
-function parseCsvFile(file) {
+function parseCsvFile(file: File) {
   const reader = new FileReader();
   reader.onload = function (e) {
-    const text = e.target.result;
+    const text = e.target!.result as string;
     processCsvText(text);
   };
   reader.readAsText(file);
 }
 
-function processCsvText(text) {
+function processCsvText(text: string) {
   const lines = text.split(/\r?\n/);
   if (lines.length === 0) return;
 
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const headers = lines[0].split(',').map((h: string) => h.trim().toLowerCase());
   const nameIndex = headers.indexOf('name');
   const emailIndex = headers.indexOf('email');
   const phoneIndex = headers.indexOf('phone');
@@ -625,7 +632,7 @@ function processCsvText(text) {
     const line = lines[i].trim();
     if (!line) continue;
 
-    const cols = line.split(',').map(c => c.trim());
+    const cols = line.split(',').map((c: string) => c.trim());
     if (cols.length <= Math.max(nameIndex, emailIndex)) continue;
 
     const name = cols[nameIndex];
@@ -652,7 +659,7 @@ function renderCsvPreview() {
 
   if (!box || !countSpan || !tbody) return;
 
-  countSpan.textContent = csvParsedCandidates.length;
+  countSpan.textContent = String(csvParsedCandidates.length);
   tbody.innerHTML = csvParsedCandidates.map(cand => `
     <tr>
       <td><strong>${escapeHTML(cand.name)}</strong></td>
@@ -665,7 +672,7 @@ function renderCsvPreview() {
   box.style.display = 'block';
   const dropzone = document.getElementById('dropzone-csv');
   if (dropzone) dropzone.style.display = 'none';
-  const footer = dropzone ? dropzone.parentElement.querySelector('.sourcing-panel-footer') : null;
+  const footer = dropzone ? dropzone.parentElement!.querySelector('.sourcing-panel-footer') as HTMLElement | null : null;
   if (footer) footer.style.display = 'none';
   soundEngine.playChime([392.00, 523.25], 0.15, 0.08);
 }
@@ -673,15 +680,15 @@ function renderCsvPreview() {
 async function importCsvCandidates() {
   if (csvParsedCandidates.length === 0) return;
 
-  const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
+  const activeJob: Job | undefined = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
   // Determine the ApplicantSource to send to backend based on which stage triggered sourcing.
   // 'screening' stage → source='scheduled' (screening_status=pending on backend)
   // 'functional' stage → source='functional' (functional_status=pending on backend)
   // null / 'resume' → source='bulk_upload' (resume analysis stage)
-  const sourceMap = { screening: 'scheduled', functional: 'functional', resume: 'bulk_upload' };
-  const apiSource = sourceMap[currentTargetStage] || 'bulk_upload';
+  const sourceMap: Record<string, string> = { screening: 'scheduled', functional: 'functional', resume: 'bulk_upload' };
+  const apiSource = sourceMap[currentTargetStage as string] || 'bulk_upload';
 
   csvParsedCandidates.forEach(cand => {
     addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob, null, currentTargetStage);
@@ -697,7 +704,7 @@ async function importCsvCandidates() {
         phone: cand.phone || null,
         source: apiSource,
       }));
-      apiAddApplicantsBulk(activeJob.id, payload).catch(err => {
+      apiAddApplicantsBulk(activeJob.id!, payload).catch((err: any) => {
         console.warn('CSV bulk add to backend failed:', err);
       });
     }
@@ -709,12 +716,12 @@ async function importCsvCandidates() {
 
   // Reset
   csvParsedCandidates = [];
-  document.getElementById('csv-preview-box').style.display = 'none';
-  const fileCsv = document.getElementById('input-file-csv');
+  (document.getElementById('csv-preview-box') as HTMLElement).style.display = 'none';
+  const fileCsv = document.getElementById('input-file-csv') as HTMLInputElement | null;
   if (fileCsv) fileCsv.value = '';
   const dropzone = document.getElementById('dropzone-csv');
   if (dropzone) dropzone.style.display = '';
-  const footer = dropzone ? dropzone.parentElement.querySelector('.sourcing-panel-footer') : null;
+  const footer = dropzone ? dropzone.parentElement!.querySelector('.sourcing-panel-footer') as HTMLElement | null : null;
   if (footer) footer.style.display = '';
 
   // Synchronize and navigate back
@@ -722,7 +729,7 @@ async function importCsvCandidates() {
   updateSummaryMetrics();
   renderAnalyticsTable();
 
-  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
+  if (document.getElementById('jobs-board-container') && (document.getElementById('jobs-board-container') as HTMLElement).style.display !== 'none') {
     renderKanbanBoard();
   } else {
     renderJobCards();
@@ -731,30 +738,30 @@ async function importCsvCandidates() {
   // Persist to the backend BEFORE navigating — the job-detail hydrate then fetches
   // and shows them, so no manual refresh is needed (api mode).
   await persistImportedCandidates(localIds, activeJob);
-  navigateToJobDetail(AppState.activeJobId);
+  navigateToJobDetail(AppState.activeJobId!);
 }
 
 // === Resumes Intake Logic ===
-function handleResumesFileSelect(event) {
-  const files = event.target.files;
+function handleResumesFileSelect(event: Event) {
+  const files = (event.target as HTMLInputElement).files!;
   if (files.length === 0) return;
   simulateResumesParsing(files);
 }
 
-function simulateResumesParsing(files) {
+function simulateResumesParsing(files: FileList) {
   const box = document.getElementById('resumes-preview-box');
   const filesList = document.getElementById('resumes-files-list');
   const countSpan = document.getElementById('resumes-upload-count');
-  const importBtn = document.getElementById('btn-resumes-import');
+  const importBtn = document.getElementById('btn-resumes-import') as HTMLButtonElement | null;
 
   if (!box || !filesList || !countSpan || !importBtn) return;
 
   box.style.display = 'block';
   const dropzone = document.getElementById('dropzone-resumes');
   if (dropzone) dropzone.style.display = 'none';
-  const footer = dropzone ? dropzone.parentElement.querySelector('.sourcing-panel-footer') : null;
+  const footer = dropzone ? dropzone.parentElement!.querySelector('.sourcing-panel-footer') as HTMLElement | null : null;
   if (footer) footer.style.display = 'none';
-  countSpan.textContent = files.length;
+  countSpan.textContent = String(files.length);
   importBtn.disabled = true;
 
   uploadedFiles = [];
@@ -763,7 +770,7 @@ function simulateResumesParsing(files) {
   appendTerminalLog(`<code>[${new Date().toLocaleTimeString()}] Aria:</code> Dropped ${files.length} candidate file(s). Initiating bulk text extraction...`);
 
   Array.from(files).forEach((file, idx) => {
-    const item = {
+    const item: UploadedFileItem = {
       name: file.name,
       size: (file.size / 1024).toFixed(1) + ' KB',
       progress: 0,
@@ -798,7 +805,7 @@ function simulateResumesParsing(files) {
       currentProgress = Math.min(92, currentProgress + Math.floor(Math.random() * 14 + 8));
       const progressInner = document.getElementById(`progress-inner-${idx}`);
       if (progressInner) {
-        progressInner.style.setProperty('--progress', currentProgress / 100);
+        progressInner.style.setProperty('--progress', String(currentProgress / 100));
       }
     }, 150 + Math.random() * 150);
 
@@ -821,7 +828,7 @@ function simulateResumesParsing(files) {
 
         const progressInner = document.getElementById(`progress-inner-${idx}`);
         if (progressInner) {
-          progressInner.style.setProperty('--progress', 1);
+          progressInner.style.setProperty('--progress', String(1));
         }
 
         const badge = document.getElementById(`status-badge-${idx}`);
@@ -830,7 +837,7 @@ function simulateResumesParsing(files) {
           badge.className = 'upload-file-status-badge done';
         }
 
-        const nameEl = fileRow.querySelector('.upload-file-name');
+        const nameEl = fileRow.querySelector('.upload-file-name') as HTMLElement | null;
         if (nameEl && item.identity?.name) {
           nameEl.textContent = item.identity.name;
           nameEl.title = file.name;
@@ -847,20 +854,20 @@ function simulateResumesParsing(files) {
 function checkAllResumesDone() {
   const allDone = uploadedFiles.every(f => f.status === 'done');
   if (allDone) {
-    const importBtn = document.getElementById('btn-resumes-import');
+    const importBtn = document.getElementById('btn-resumes-import') as HTMLButtonElement | null;
     if (importBtn) importBtn.disabled = false;
     soundEngine.playChime([523.25, 659.25], 0.12, 0.08);
   }
 }
 
-async function extractTextFromResumeFile(file) {
+async function extractTextFromResumeFile(file: File): Promise<string> {
   const isTxt = /\.(txt|text)$/i.test(file.name);
   const isPdfOrDocx = /\.(pdf|docx?)$/i.test(file.name);
 
   if (isTxt) {
-    return new Promise((resolve, reject) => {
+    return new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = e => resolve(e.target.result || '');
+      reader.onload = e => resolve((e.target!.result as string) || '');
       reader.onerror = reject;
       reader.readAsText(file);
     });
@@ -881,10 +888,10 @@ async function extractTextFromResumeFile(file) {
 async function importResumesCandidates() {
   if (uploadedFiles.length === 0) return;
 
-  const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
+  const activeJob: Job | undefined = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
-  const importedCandIds = [];
+  const importedCandIds: string[] = [];
   uploadedFiles.forEach(file => {
     const fallbackName = extractCandidateNameFromFilename(file.name);
     const identity = file.identity || extractResumeIdentity(file.textContent, fallbackName, file.name);
@@ -899,19 +906,19 @@ async function importResumesCandidates() {
   showPremiumToast(`Imported ${uploadedFiles.length} candidate(s) — running AI analysis...`, 'success');
 
   uploadedFiles = [];
-  document.getElementById('resumes-preview-box').style.display = 'none';
-  const fileRes = document.getElementById('input-file-resumes');
+  (document.getElementById('resumes-preview-box') as HTMLElement).style.display = 'none';
+  const fileRes = document.getElementById('input-file-resumes') as HTMLInputElement | null;
   if (fileRes) fileRes.value = '';
   const dropzone = document.getElementById('dropzone-resumes');
   if (dropzone) dropzone.style.display = '';
-  const footer = dropzone ? dropzone.parentElement.querySelector('.sourcing-panel-footer') : null;
+  const footer = dropzone ? dropzone.parentElement!.querySelector('.sourcing-panel-footer') as HTMLElement | null : null;
   if (footer) footer.style.display = '';
 
   recalculateJobPipelines();
   updateSummaryMetrics();
   renderAnalyticsTable();
 
-  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
+  if (document.getElementById('jobs-board-container') && (document.getElementById('jobs-board-container') as HTMLElement).style.display !== 'none') {
     renderKanbanBoard();
   } else {
     renderJobCards();
@@ -920,7 +927,7 @@ async function importResumesCandidates() {
   // Persist first so the candidates survive the hydrate (no manual refresh), then
   // analyse against their real backend ids (the resume caches were re-keyed).
   const backendIds = await persistImportedCandidates(importedCandIds, activeJob);
-  navigateToJobDetail(AppState.activeJobId);
+  navigateToJobDetail(AppState.activeJobId!);
 
   if (!currentTargetStage || currentTargetStage === 'resume') {
     setTimeout(() => {
@@ -929,16 +936,16 @@ async function importResumesCandidates() {
   }
 }
 
-function extractCandidateNameFromFilename(filename) {
+function extractCandidateNameFromFilename(filename: string) {
   let name = filename.replace(/\.[^/.]+$/, "");
   name = name.replace(/[_\-.]/g, " ");
   name = name.replace(/\b(resume|cv|hiring|job|developer|executive|profile|senior|junior|doc|pdf|en)\b/gi, "");
-  name = name.trim().split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  name = name.trim().split(/\s+/).map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
   if (!name) name = "Candidate " + Math.floor(Math.random() * 1000);
   return name;
 }
 
-function extractResumeIdentity(text = '', fallbackName = '', filename = '') {
+function extractResumeIdentity(text: string | null = '', fallbackName = '', filename = '') {
   const cleanText = normalizeResumeText(text);
   const email = extractResumeEmail(cleanText);
   const phone = extractResumePhone(cleanText);
@@ -958,7 +965,7 @@ function extractResumeIdentity(text = '', fallbackName = '', filename = '') {
   };
 }
 
-function normalizeResumeText(text = '') {
+function normalizeResumeText(text: string | null = '') {
   return String(text)
     .replace(/\u0000/g, ' ')
     .replace(/[ \t]+/g, ' ')
@@ -966,12 +973,12 @@ function normalizeResumeText(text = '') {
     .trim();
 }
 
-function extractResumeEmail(text) {
+function extractResumeEmail(text: string) {
   const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
   return match ? match[0].toLowerCase() : '';
 }
 
-function extractResumePhone(text) {
+function extractResumePhone(text: string) {
   const candidates = text.match(/(?:\+?\d[\d\s().-]{7,}\d)/g) || [];
   for (const candidate of candidates) {
     const digits = candidate.replace(/\D/g, '');
@@ -982,12 +989,12 @@ function extractResumePhone(text) {
   return '';
 }
 
-function extractResumeLinkedIn(text) {
+function extractResumeLinkedIn(text: string) {
   const match = text.match(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/[^\s)]+/i);
   return match ? match[0].replace(/[.,;]+$/, '') : '';
 }
 
-function extractExplicitResumeName(text) {
+function extractExplicitResumeName(text: string) {
   const patterns = [
     /(?:^|\n)\s*(?:name|full name|candidate name)\s*[:-]\s*([A-Za-z][A-Za-z.' -]{2,80})/i,
     /(?:^|\n)\s*(?:candidate)\s*[:-]\s*([A-Za-z][A-Za-z.' -]{2,80})/i
@@ -1003,9 +1010,9 @@ function extractExplicitResumeName(text) {
   return '';
 }
 
-function extractHeaderResumeName(text) {
+function extractHeaderResumeName(text: string) {
   const lines = text.split('\n')
-    .map(line => line.trim())
+    .map((line: string) => line.trim())
     .filter(Boolean)
     .slice(0, 30);
 
@@ -1057,18 +1064,18 @@ function isLikelyPersonName(name = '') {
   return words.every(word => /^[A-Za-z][A-Za-z.'-]{1,}$/.test(word));
 }
 
-function nameFromEmail(email) {
+function nameFromEmail(email: string) {
   const local = email.split('@')[0] || '';
   const parts = local
     .replace(/[0-9]+/g, ' ')
     .split(/[._+-]+/)
-    .map(part => part.trim())
-    .filter(part => part.length > 1 && !['info', 'contact', 'mail', 'hello', 'admin', 'resume', 'cv'].includes(part.toLowerCase()));
+    .map((part: string) => part.trim())
+    .filter((part: string) => part.length > 1 && !['info', 'contact', 'mail', 'hello', 'admin', 'resume', 'cv'].includes(part.toLowerCase()));
   if (parts.length < 2) return '';
   return normalizeCandidateName(parts.slice(0, 3).join(' '));
 }
 
-function createPlaceholderEmail(name) {
+function createPlaceholderEmail(name: string) {
   const slug = normalizeCandidateName(name)
     .toLowerCase()
     .replace(/[^a-z\s]/g, '')
@@ -1079,9 +1086,9 @@ function createPlaceholderEmail(name) {
 
 // === Manual Queue Intake Logic ===
 function addCandidateToManualQueue() {
-  const nameInput = document.getElementById('manual-name');
-  const emailInput = document.getElementById('manual-email');
-  const phoneInput = document.getElementById('manual-phone');
+  const nameInput = document.getElementById('manual-name') as HTMLInputElement | null;
+  const emailInput = document.getElementById('manual-email') as HTMLInputElement | null;
+  const phoneInput = document.getElementById('manual-phone') as HTMLInputElement | null;
 
   if (!nameInput || !emailInput) return;
 
@@ -1108,7 +1115,7 @@ function addCandidateToManualQueue() {
   soundEngine.playClick();
 }
 
-function removeCandidateFromQueue(index) {
+function removeCandidateFromQueue(index: number) {
   sourcingQueue.splice(index, 1);
   renderManualQueue();
   soundEngine.playClick();
@@ -1118,12 +1125,12 @@ function renderManualQueue() {
   const container = document.getElementById('manual-queue-list');
   const countSpan = document.getElementById('manual-queue-count');
   const clearBtn = document.getElementById('btn-clear-manual');
-  const importBtn = document.getElementById('btn-manual-import');
+  const importBtn = document.getElementById('btn-manual-import') as HTMLButtonElement | null;
   const emptyState = document.getElementById('manual-queue-empty');
 
   if (!container || !countSpan || !clearBtn || !importBtn || !emptyState) return;
 
-  countSpan.textContent = sourcingQueue.length;
+  countSpan.textContent = String(sourcingQueue.length);
 
   if (sourcingQueue.length === 0) {
     emptyState.style.display = 'flex';
@@ -1153,12 +1160,12 @@ function renderManualQueue() {
 async function importManualQueue() {
   if (sourcingQueue.length === 0) return;
 
-  const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
+  const activeJob: Job | undefined = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
   // Determine ApplicantSource for backend based on targetStage
-  const sourceMap = { screening: 'scheduled', functional: 'functional', resume: 'bulk_upload' };
-  const apiSource = sourceMap[currentTargetStage] || 'bulk_upload';
+  const sourceMap: Record<string, string> = { screening: 'scheduled', functional: 'functional', resume: 'bulk_upload' };
+  const apiSource = sourceMap[currentTargetStage as string] || 'bulk_upload';
 
   sourcingQueue.forEach(cand => {
     addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob, null, currentTargetStage);
@@ -1174,7 +1181,7 @@ async function importManualQueue() {
         phone: cand.phone || null,
         source: apiSource,
       }));
-      apiAddApplicantsBulk(activeJob.id, payload).catch(err => {
+      apiAddApplicantsBulk(activeJob.id!, payload).catch((err: any) => {
         console.warn('Manual bulk add to backend failed:', err);
       });
     }
@@ -1192,7 +1199,7 @@ async function importManualQueue() {
   updateSummaryMetrics();
   renderAnalyticsTable();
 
-  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
+  if (document.getElementById('jobs-board-container') && (document.getElementById('jobs-board-container') as HTMLElement).style.display !== 'none') {
     renderKanbanBoard();
   } else {
     renderJobCards();
@@ -1200,7 +1207,7 @@ async function importManualQueue() {
 
   // Persist before navigating so the hydrate shows them without a manual refresh.
   await persistImportedCandidates(localIds, activeJob);
-  navigateToJobDetail(AppState.activeJobId);
+  navigateToJobDetail(AppState.activeJobId!);
 }
 
 // === Shared Candidate Insertion helper ===
@@ -1208,7 +1215,7 @@ async function importManualQueue() {
 // Null / 'resume' → status='Resume' (enters resume analysis)
 // 'screening'     → status='Screening'
 // 'functional'    → status='Functional'
-function addCandidateToAppState(name, email, phone, job, resumeText, targetStage) {
+function addCandidateToAppState(name: string, email: string | null, phone: string | null, job: Job, resumeText: string | null, targetStage: string | null) {
   const identity = extractResumeIdentity(resumeText, name);
   const candidateName = identity.name || normalizeCandidateName(name) || name;
   const candidateEmail = identity.email || email || createPlaceholderEmail(candidateName);
@@ -1242,7 +1249,7 @@ function addCandidateToAppState(name, email, phone, job, resumeText, targetStage
   }
   const score = '—';
 
-  AppState.candidates.push({
+  (AppState.candidates as Candidate[]).push({
     id: candId,
     name: candidateName,
     email: candidateEmail,
@@ -1274,12 +1281,12 @@ function addCandidateToAppState(name, email, phone, job, resumeText, targetStage
 // jobId === job.id, which the next hydrate then wipes — so rather than leave an
 // invisible ghost (silent loss), we drop the failed rows and tell the recruiter
 // exactly who failed and why, so they can fix and re-import.
-async function persistImportedCandidates(localIds, job) {
+async function persistImportedCandidates(localIds: string[], job: Job): Promise<string[]> {
   if (!isApiMode() || !job || !job._backend) return localIds;
-  const ids = [];
-  const failed = [];
+  const ids: string[] = [];
+  const failed: Candidate[] = [];
   for (const localId of localIds) {
-    const cand = AppState.candidates.find((c) => c.id === localId);
+    const cand: Candidate | undefined = AppState.candidates.find((c) => c.id === localId);
     if (!cand) continue;
     try {
       // Schedule-mode candidates (local status 'Screening') persist with
@@ -1288,12 +1295,12 @@ async function persistImportedCandidates(localIds, job) {
       // persists with source='functional' so they appear in Functional Interview;
       // analyse-mode (status 'Resume') sends no source and stays Resume-only.
       const source = cand.status === 'Screening' ? 'scheduled' : (cand.status === 'Functional' ? 'functional' : null);
-      const created = await apiAddApplicant(job.id, { name: cand.name, email: cand.email, phone: cand.phone, source });
+      const created = await apiAddApplicant(job.id!, { name: cand.name, email: cand.email, phone: cand.phone, source: source as any });
       if (!created || !created.id) throw new Error('no id returned');
       const uuid = created.id;
       if (resumeTextCache[localId] != null) { resumeTextCache[uuid] = resumeTextCache[localId]; delete resumeTextCache[localId]; }
       if (resumeIdentityCache[localId] != null) { resumeIdentityCache[uuid] = resumeIdentityCache[localId]; delete resumeIdentityCache[localId]; }
-      cand.id = uuid; cand.jobId = job.id; cand._backend = true;
+      cand.id = uuid; cand.jobId = job.id as string; cand._backend = true;
       ids.push(uuid);
     } catch (e) {
       failed.push(cand);
@@ -1302,14 +1309,14 @@ async function persistImportedCandidates(localIds, job) {
   if (failed.length) {
     const failedIds = new Set(failed.map((c) => c.id));
     AppState.candidates = AppState.candidates.filter((c) => !failedIds.has(c.id));
-    failed.forEach((c) => { delete resumeTextCache[c.id]; delete resumeIdentityCache[c.id]; });
+    failed.forEach((c) => { delete resumeTextCache[c.id as string]; delete resumeIdentityCache[c.id as string]; });
     const names = failed.map((c) => c.name).slice(0, 3).join(', ') + (failed.length > 3 ? ` +${failed.length - 3} more` : '');
     showPremiumToast(`Couldn't save ${failed.length} candidate(s) to the backend (${names}) — check for duplicate or blank emails and re-import.`, 'error');
   }
   return ids;
 }
 
-function showPremiumToast(message, type = 'success', action = null) {
+function showPremiumToast(message: string, type = 'success', action: { label?: string; onClick?: () => void } | null = null) {
   const existing = document.querySelector('.toast-notification');
   if (existing) {
     existing.remove();
@@ -1339,7 +1346,7 @@ function showPremiumToast(message, type = 'success', action = null) {
     const btn = document.createElement('button');
     btn.className = 'toast-action';
     btn.textContent = action.label;
-    btn.addEventListener('click', () => { action.onClick(); dismiss(); });
+    btn.addEventListener('click', () => { action!.onClick!(); dismiss(); });
     toast.appendChild(btn);
   }
 

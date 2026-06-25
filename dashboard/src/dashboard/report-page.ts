@@ -927,7 +927,7 @@ function bindReportPage(candidate: Candidate, job: Job, analysis: ResumeAnalysis
     if (value === 'rejected') {
       // Rejecting also moves the kanban card; updateCandidateStatus persists decision='rejected'.
       const { updateCandidateStatus } = await import('./job-detail-panes');
-      updateCandidateStatus(candidate.id, 'Rejected');
+      updateCandidateStatus(candidate.id as string, 'Rejected');
       showPremiumToast(`${candidate.name} marked as Rejected.`, 'info');
     } else {
       if (candidate._backend && getDataSource() === 'api') {
@@ -1005,14 +1005,14 @@ function bindReportPage(candidate: Candidate, job: Job, analysis: ResumeAnalysis
   // Stage actions
   root.querySelector('#rp-btn-reject')?.addEventListener('click', async () => {
     const { updateCandidateStatus } = await import('./job-detail-panes');
-    updateCandidateStatus(candidate.id, 'Rejected');
+    updateCandidateStatus(candidate.id as string, 'Rejected');
     navigateToJobDetail(job.id as string);
   });
   root.querySelector('#rp-btn-advance')?.addEventListener('click', async () => {
     const next = getCandidateNextStage(candidate.status as string);
     if (!next) return;
     const { updateCandidateStatus } = await import('./job-detail-panes');
-    updateCandidateStatus(candidate.id, next);
+    updateCandidateStatus(candidate.id as string, next);
     openCandidateReportPage(candidate.id as string);
   });
 }

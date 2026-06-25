@@ -129,11 +129,11 @@ function tableHTML(rows: InterviewAnalysisRow[]) {
         </thead>
         <tbody>
           ${rows.map(r => `
-            <tr data-candidate-id="${escapeHTML(r.id)}">
+            <tr data-candidate-id="${escapeHTML(r.id as string)}">
               <td>
                 <div class="table-candidate-cell">
-                  <span class="cand-name-link ia-open" data-cand-id="${escapeHTML(r.id)}">${escapeHTML(r.name)} <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
-                  <span class="cand-email-sub">${escapeHTML(r.email)}</span>
+                  <span class="cand-name-link ia-open" data-cand-id="${escapeHTML(r.id as string)}">${escapeHTML(r.name)} <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
+                  <span class="cand-email-sub">${escapeHTML(r.email as string)}</span>
                 </div>
               </td>
               <td><span class="interview-score-dot ${scoreColor(r.overallScore)}"></span> ${r.overallScore != null ? Math.round(r.overallScore) : '—'}</td>
@@ -141,7 +141,7 @@ function tableHTML(rows: InterviewAnalysisRow[]) {
               <td>${r.questionCount || '—'}</td>
               <td>${cheatBadge(r.cheatProbability)}${r.violationCount ? ` <span class="ia-violations">${r.violationCount} flag${r.violationCount === 1 ? '' : 's'}</span>` : ''}</td>
               <td>${fmtDate(r.evaluatedAt)}</td>
-              <td><a href="#" class="report-link ia-open" data-cand-id="${escapeHTML(r.id)}">View Report <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a></td>
+              <td><a href="#" class="report-link ia-open" data-cand-id="${escapeHTML(r.id as string)}">View Report <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a></td>
             </tr>
           `).join('')}
         </tbody>
@@ -197,7 +197,7 @@ export async function renderInterviewAnalysisStage(job: Job, container: HTMLElem
 
   let rows: InterviewAnalysisRow[];
   try {
-    rows = await apiFetchInterviewAnalysis(job.id);
+    rows = await apiFetchInterviewAnalysis(job.id as string);
   } catch (err: any) {
     console.warn('Interview analysis fetch failed:', err);
     if (!cached) {

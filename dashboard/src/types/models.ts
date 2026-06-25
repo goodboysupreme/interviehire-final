@@ -230,6 +230,8 @@ export interface Candidate {
   email?: string | null;
   phone?: string | null;
   linkedin?: string | null;
+  /** Where the resume-identity name/email was derived from (sourcing.ts). */
+  resumeIdentitySource?: string | null;
   jobApplied?: string;
   jobId?: string | null;
   status?: CandidateStatus | string;

@@ -22,7 +22,7 @@ import { renderSpotlightResults, SpotlightCommands, spotlightUi, toggleSpotlight
 import { AppState, generateJobId } from './state';
 import { apiCreateJob, apiPatchJobParameters, apiDeleteJob, apiUpdateJobStatus, apiInviteMember, isApiMode, getDataSource } from './api';
 import { initOrgSwitcher } from './org-switcher';
-import type { Job, Candidate, TeamMember, AppState as AppStateType } from '../types/models';
+import type { Job, Candidate, TeamMember, AgentConfig, AppState as AppStateType } from '../types/models';
 
 // ==========================================
 // COMPONENT MOUNT BINDINGS
@@ -288,7 +288,7 @@ function initMountBindings() {
         updateJobsCounters();
         if (getDataSource() === 'api' && job._backend) {
           // Persist the status change; roll back if the backend rejects it.
-          apiUpdateJobStatus(job.id, next).catch((e: any) => {
+          apiUpdateJobStatus(job.id as string, next).catch((e: any) => {
             job.status = prev;
             saveStateToLocalStorage();
             renderJobCards();
@@ -327,7 +327,7 @@ function initMountBindings() {
           // optimistic removal back if the backend rejects the delete. No Undo
           // here: the backend hard-deletes (cascading applicants), so a local
           // re-insert couldn't truly restore it.
-          apiDeleteJob(job.id).catch((e: any) => {
+          apiDeleteJob(job.id as string).catch((e: any) => {
             restoreJob();
             showPremiumToast(`Couldn't delete "${name}": ${(e && e.message) || 'backend error'}`, 'error');
           });
@@ -342,7 +342,7 @@ function initMountBindings() {
             renderJobCards();
             updateJobsCounters();
             updateSummaryMetrics();
-            showPremiumToast(`"${name}" deleted.`, 'success', { label: 'Undo', onClick: restoreJob });
+            showPremiumToast(`"${name}" deleted.`, 'success', { label: 'Undo', onClick: restoreJob } as any);
           }, 0);
         }
         break;
@@ -634,27 +634,27 @@ function initMountBindings() {
         } catch (err) {
           console.error('Backend job create failed:', err);
           if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = origBtnHTML; }
-          showPremiumToast(`Could not create job: ${err.message}`, 'error');
+          showPremiumToast(`Could not create job: ${(err as Error).message}`, 'error');
           return;
         }
-        AppState.jobs.push(created);
+        (AppState.jobs as Job[]).push(created);
         saveStateToLocalStorage();
         // Enrich with AI and persist the blueprint so the draft is reviewable.
         if (description) {
           if (submitBtn) submitBtn.innerHTML = 'Generating interview pipeline…';
           try {
             await enrichJobWithAI(created, description);
-            await apiPatchJobParameters(created.id, created);
+            await apiPatchJobParameters(created.id as string, created);
           } catch (err) {
             console.error('Job enrichment/persist failed:', err);
           }
         }
         if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = origBtnHTML; }
         closeDrawers();
-        createJobForm.reset();
+        (createJobForm as HTMLFormElement).reset();
         showPremiumToast(`Created job card "${roleName}" as Draft.`, 'success');
         soundEngine.playChime([261.63, 329.63, 392.00, 523.25], 0.2, 0.08);
-        openJobFlowView(created.id, true);
+        openJobFlowView(created.id as string, true);
         return;
       }
 
@@ -667,13 +667,13 @@ function initMountBindings() {
       const firstNames = ['Lucas', 'Sofia', 'Marcus', 'Chloe', 'Daniel', 'Amina'];
       const lastNames = ['Chen', 'Silva', 'Taylor', 'Nakamura', 'Oki', 'Ali'];
 
-      const createMockCandidate = (status) => {
+      const createMockCandidate = (status: string) => {
         const name = `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
         const email = `${name.toLowerCase().replace(' ', '.')}@recruit.io`;
         const id = `CAN-${Math.floor(Math.random() * 8999 + 1000)}-${customId !== '-' ? customId.slice(-3) : generateJobId().slice(-3)}`;
         const scoreVal = Math.floor(Math.random() * 15 + 80) + '%';
 
-        AppState.candidates.push({
+        const mockCandidate: Candidate = {
           id,
           name,
           email,
@@ -681,7 +681,8 @@ function initMountBindings() {
           status,
           score: scoreVal,
           registeredOn: new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 10:00 AM'
-        });
+        };
+        (AppState.candidates as Candidate[]).push(mockCandidate);
       };
 
       if (addResume) {
@@ -701,7 +702,7 @@ function initMountBindings() {
         totalApplicants++;
       }
 
-      const newJob = {
+      const newJob: Job = {
         id: generateJobId(),
         roleName: roleName,
         cardName: cardName,
@@ -709,7 +710,7 @@ function initMountBindings() {
         status: 'draft',
         customJobId: customId,
         experienceBand: expBand,
-        createdBy: globalThis.IH_USER_NAME || 'You',
+        createdBy: (globalThis as any).IH_USER_NAME || 'You',
         description: description || "No job description provided.",
         questions: [],
         pipeline: {
@@ -720,12 +721,12 @@ function initMountBindings() {
         }
       };
 
-      AppState.jobs.push(newJob);
+      (AppState.jobs as Job[]).push(newJob);
       saveStateToLocalStorage();
 
       // Enrich with AI so the manual path yields the same reviewable draft
       // (criteria, questions, JD grade) as the upload and Lina paths.
-      const submitBtn = createJobForm.querySelector('button[type="submit"]') || e.submitter;
+      const submitBtn = (createJobForm.querySelector('button[type="submit"]') || (e as SubmitEvent).submitter) as HTMLButtonElement | null;
       const origBtnHTML = submitBtn ? submitBtn.innerHTML : '';
       if (submitBtn) {
         submitBtn.disabled = true;
@@ -745,26 +746,26 @@ function initMountBindings() {
 
       // Close Drawer panel and reset form
       closeDrawers();
-      createJobForm.reset();
+      (createJobForm as HTMLFormElement).reset();
       showPremiumToast(`Created job card "${roleName}" as Draft.`, "success");
       soundEngine.playChime([261.63, 329.63, 392.00, 523.25], 0.2, 0.08); // Melodic confirmation chime
 
       // Open Job Flow config view for the new draft job
-      openJobFlowView(newJob.id, true);
+      openJobFlowView(newJob.id as string, true);
     });
   }
 
   // 2. Invite Team Member Submission
-  const inviteMemberForm = document.getElementById('form-invite-member');
+  const inviteMemberForm = document.getElementById('form-invite-member')!;
   inviteMemberForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    const name = document.getElementById('member-name-input').value;
-    const email = document.getElementById('member-email-input').value;
-    const designation = document.getElementById('member-designation-input').value;
-    const usertype = document.getElementById('member-role-input').value;
+    const name = (document.getElementById('member-name-input') as HTMLInputElement).value;
+    const email = (document.getElementById('member-email-input') as HTMLInputElement).value;
+    const designation = (document.getElementById('member-designation-input') as HTMLInputElement).value;
+    const usertype = (document.getElementById('member-role-input') as HTMLInputElement).value;
 
-    let newMember = {
+    let newMember: TeamMember = {
       name: name,
       email: email,
       designation: designation,
@@ -779,12 +780,12 @@ function initMountBindings() {
       try {
         newMember = await apiInviteMember({ name, email, designation, usertype });
       } catch (err) {
-        showPremiumToast(`Could not invite ${name}: ${(err && err.message) || 'backend error'}`, 'error');
+        showPremiumToast(`Could not invite ${name}: ${(err && (err as Error).message) || 'backend error'}`, 'error');
         return;
       }
     }
 
-    AppState.team.push(newMember);
+    (AppState.team as TeamMember[]).push(newMember);
     saveStateToLocalStorage();
 
     // Refresh display
@@ -792,7 +793,7 @@ function initMountBindings() {
 
     // Close Drawer panel
     closeDrawers();
-    inviteMemberForm.reset();
+    (inviteMemberForm as HTMLFormElement).reset();
     soundEngine.playChime([261.63, 392.00, 523.25], 0.2, 0.08); // Confirmation chime
   });
 
@@ -802,9 +803,9 @@ function initMountBindings() {
     try {
       const saved = localStorage.getItem('IntervieHire_career_subdomain');
       if (!saved) return;
-      const field = document.getElementById('career-subdomain');
+      const field = document.getElementById('career-subdomain') as HTMLInputElement | null;
       if (field) field.value = saved;
-      const statusLink = document.querySelector('.status-link');
+      const statusLink = document.querySelector('.status-link') as HTMLAnchorElement | null;
       if (statusLink) {
         statusLink.textContent = `IntervieHire.com/careers/${saved} ↗`;
         statusLink.href = `https://IntervieHire.com/careers/${saved}`;
@@ -815,13 +816,13 @@ function initMountBindings() {
   document.getElementById('career-settings-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
     soundEngine.playChime([523.25], 0.15);
-    const domainName = document.getElementById('career-subdomain').value;
+    const domainName = (document.getElementById('career-subdomain') as HTMLInputElement).value;
     try { localStorage.setItem('IntervieHire_career_subdomain', domainName); } catch { }
-    const statusLink = document.querySelector('.status-link');
+    const statusLink = document.querySelector('.status-link') as HTMLAnchorElement;
     statusLink.textContent = `IntervieHire.com/careers/${domainName} ↗`;
     statusLink.href = `https://IntervieHire.com/careers/${domainName}`;
 
-    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const submitBtn = (e.target as HTMLElement).querySelector('button[type="submit"]') as HTMLButtonElement;
     const origText = submitBtn.textContent;
     submitBtn.textContent = '✓ Saved Settings!';
     submitBtn.style.background = 'var(--color-success)';
@@ -882,7 +883,7 @@ function initMountBindings() {
   document.getElementById('btn-columns-toggle')?.addEventListener('click', (e) => {
     e.stopPropagation();
     soundEngine.playClick();
-    const pop = document.getElementById('pop-columns-toggle');
+    const pop = document.getElementById('pop-columns-toggle')!;
     const isShowing = pop.style.display !== 'none';
 
     // Close other
@@ -899,7 +900,7 @@ function initMountBindings() {
   document.getElementById('btn-columns-team')?.addEventListener('click', (e) => {
     e.stopPropagation();
     soundEngine.playClick();
-    const pop = document.getElementById('pop-columns-team');
+    const pop = document.getElementById('pop-columns-team')!;
     const isShowing = pop.style.display !== 'none';
 
     // Close other
@@ -920,14 +921,14 @@ function initMountBindings() {
     if (popToggle) popToggle.style.display = 'none';
     if (popTeam) popTeam.style.display = 'none';
     document.querySelectorAll('.stage-filter-dropdown').forEach(d => d.remove());
-    document.querySelectorAll('.filter-chip.active-filter').forEach(c => { c.classList.remove('active-filter'); c._filterDropdown = null; });
+    document.querySelectorAll('.filter-chip.active-filter').forEach(c => { c.classList.remove('active-filter'); (c as any)._filterDropdown = null; });
   });
 
   // Kanban view switching setup
   const btnViewCards = document.getElementById('btn-view-cards');
   const btnViewBoard = document.getElementById('btn-view-board');
-  const jobsListContainer = document.getElementById('jobs-list-container');
-  const jobsBoardContainer = document.getElementById('jobs-board-container');
+  const jobsListContainer = document.getElementById('jobs-list-container')!;
+  const jobsBoardContainer = document.getElementById('jobs-board-container')!;
 
   if (btnViewCards && btnViewBoard) {
     btnViewCards.addEventListener('click', () => {
@@ -950,7 +951,7 @@ function initMountBindings() {
   }
 
   // Spotlight input key bindings
-  const spotlightInput = document.getElementById('spotlight-input');
+  const spotlightInput = document.getElementById('spotlight-input') as HTMLInputElement | null;
   if (spotlightInput) {
     spotlightInput.addEventListener('keydown', (e) => {
       const query = spotlightInput.value.toLowerCase().trim();
@@ -998,7 +999,7 @@ function initMountBindings() {
   }
 
   // AI Swarm Prompter bindings
-  const swarmPrompter = document.getElementById('swarm-prompter');
+  const swarmPrompter = document.getElementById('swarm-prompter') as HTMLTextAreaElement | null;
   const btnSwarmPrompt = document.getElementById('btn-swarm-prompt');
 
   if (swarmPrompter && btnSwarmPrompt) {
@@ -1018,9 +1019,9 @@ function initMountBindings() {
 
   function triggerChartThemeRedraw() {
     if (AppState.activeTab === 'job-detail' && AppState.activeJobId) {
-      const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
+      const activeJob = AppState.jobs.find((j: Job) => j.id === AppState.activeJobId) as Job | undefined;
       if (activeJob) {
-        const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(c => {
+        const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter((c: Candidate) => {
           if (getDataSource() === 'api' && activeJob._backend) {
             return c.jobId === activeJob.id;
           }
@@ -1092,7 +1093,7 @@ function initMountBindings() {
       if (pane) pane.classList.add('active');
       // Reflect the stage in the URL so each tab is a deep-linkable route
       // (back/forward works). navigateToPath sees the same active tab and no-ops.
-      if (AppState.activeJobId) pushUrl(jobStageUrl(AppState.activeJobId, tabId));
+      if (AppState.activeJobId) pushUrl(jobStageUrl(AppState.activeJobId, tabId as string));
       soundEngine.playClick();
 
       // Stop any active card audio playing
@@ -1113,9 +1114,9 @@ function initMountBindings() {
   if (jdScoreType) {
     jdScoreType.addEventListener('change', () => {
       if (AppState.activeJobId) {
-        const job = AppState.jobs.find(j => j.id === AppState.activeJobId);
+        const job = AppState.jobs.find((j: Job) => j.id === AppState.activeJobId) as Job | undefined;
         if (job) {
-          const jobCandidates = AppState.candidates.filter(c => {
+          const jobCandidates = (AppState.candidates as Candidate[]).filter((c: Candidate) => {
             if (getDataSource() === 'api' && job._backend) {
               return c.jobId === job.id;
             }
@@ -1159,11 +1160,11 @@ function initMountBindings() {
 
   // Dropzone file select
   const jdDropzone = document.getElementById('jd-dropzone');
-  const jdFileInput = document.getElementById('jd-file-input');
+  const jdFileInput = document.getElementById('jd-file-input') as HTMLInputElement | null;
 
-  function handleCreateJobFile(file) {
+  function handleCreateJobFile(file: File | null | undefined) {
     if (!file) return;
-    createJobUpload.fileName = file.name;
+    (createJobUpload as any).fileName = file.name;
     const preview = document.getElementById('dropzone-file-preview');
     if (preview) {
       preview.style.display = 'flex';
@@ -1185,11 +1186,11 @@ function initMountBindings() {
       });
     }
     if (jdDropzone) jdDropzone.classList.add('has-file');
-    createJobUpload.file = file;
-    const ext = file.name.split('.').pop().toLowerCase();
+    (createJobUpload as any).file = file;
+    const ext = file.name.split('.').pop()!.toLowerCase();
     if (ext === 'txt') {
       const reader = new FileReader();
-      reader.onload = (ev) => { createJobUpload.text = ev.target.result; };
+      reader.onload = (ev) => { (createJobUpload as any).text = ev.target!.result; };
       reader.onerror = () => { createJobUpload.text = null; };
       reader.readAsText(file);
     } else {
@@ -1208,21 +1209,21 @@ function initMountBindings() {
     jdDropzone.addEventListener('drop', (e) => {
       e.preventDefault();
       jdDropzone.classList.remove('drag-over');
-      const file = e.dataTransfer.files[0];
+      const file = (e as DragEvent).dataTransfer!.files[0];
       if (file) handleCreateJobFile(file);
     });
   }
   if (jdFileInput) {
     jdFileInput.addEventListener('change', () => {
-      if (jdFileInput.files[0]) handleCreateJobFile(jdFileInput.files[0]);
+      if (jdFileInput.files![0]) handleCreateJobFile(jdFileInput.files![0]);
     });
   }
 
   // Continue button — process file or pasted text with DeepSeek
-  const btnContinue = document.getElementById('btn-create-job-continue');
+  const btnContinue = document.getElementById('btn-create-job-continue') as HTMLButtonElement | null;
   if (btnContinue) {
     btnContinue.addEventListener('click', async () => {
-      const pasteArea = document.getElementById('create-jd-paste');
+      const pasteArea = document.getElementById('create-jd-paste') as HTMLTextAreaElement | null;
       const pastedText = (pasteArea && pasteArea.style.display !== 'none') ? pasteArea.value.trim() : '';
       let textToProcess = pastedText || createJobUpload.text;
       const sourceName = createJobUpload.fileName || 'pasted text';
@@ -1275,14 +1276,14 @@ Return ONLY valid JSON:
         ], true);
 
         const parsed = parseAIJson(response);
-        const jobDraft = {
+        const jobDraft: Job = {
           roleName: parsed.roleName,
           cardName: parsed.cardName || parsed.roleName,
           created: new Date().toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
           status: 'draft',
           customJobId: '-',
           experienceBand: parsed.experienceBand || 'Upto 2 Years',
-          createdBy: globalThis.IH_USER_NAME || 'You',
+          createdBy: (globalThis as any).IH_USER_NAME || 'You',
           description: parsed.description || textToProcess.slice(0, 500),
           questions: [],
           pipeline: { total: 0, resume: 0, screening: 0, functional: 0 },
@@ -1290,8 +1291,8 @@ Return ONLY valid JSON:
         };
         // api mode: create on the backend first so the job (and the AI blueprint
         // generated below) persists; local mode keeps a local id.
-        const newJob = isApiMode() ? await apiCreateJob(jobDraft) : { ...jobDraft, id: generateJobId() };
-        AppState.jobs.unshift(newJob);
+        const newJob: Job = isApiMode() ? await apiCreateJob(jobDraft) : { ...jobDraft, id: generateJobId() };
+        (AppState.jobs as Job[]).unshift(newJob);
         saveStateToLocalStorage();
 
         btnContinue.innerHTML = `<div class="spinner-mini" style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin-mini 0.6s linear infinite;margin-right:6px;vertical-align:middle;"></div> Generating interview pipeline...`;
@@ -1315,7 +1316,7 @@ Return ONLY valid JSON:
   }
 
   // Lina chat send button + Enter key
-  const ariaChatInput = document.getElementById('aria-chat-input');
+  const ariaChatInput = document.getElementById('aria-chat-input') as HTMLTextAreaElement | null;
   const ariaSendBtn = document.getElementById('btn-aria-send');
 
   if (ariaSendBtn && ariaChatInput) {
@@ -1364,37 +1365,37 @@ Return ONLY valid JSON:
   const tempSlider = document.getElementById('agent-temp-slider');
   if (tempSlider) {
     tempSlider.addEventListener('input', (e) => {
-      document.getElementById('agent-temp-val').textContent = parseFloat(e.target.value).toFixed(1);
+      document.getElementById('agent-temp-val')!.textContent = parseFloat((e.target as HTMLInputElement).value).toFixed(1);
     });
   }
   const threshSlider = document.getElementById('agent-threshold-slider');
   if (threshSlider) {
     threshSlider.addEventListener('input', (e) => {
-      document.getElementById('agent-threshold-val').textContent = `${e.target.value}%`;
+      document.getElementById('agent-threshold-val')!.textContent = `${(e.target as HTMLInputElement).value}%`;
     });
   }
 
   // Bind Swarm Agent Customizer Drawers trigger on agent-cards clicking
-  const bindAgentCard = (elementId, agentKey, agentName) => {
+  const bindAgentCard = (elementId: string, agentKey: string, agentName: string) => {
     const card = document.getElementById(elementId);
     if (card) {
       card.style.cursor = 'pointer';
       card.addEventListener('click', () => {
-        const overlay = document.getElementById('drawer-backdrop');
+        const overlay = document.getElementById('drawer-backdrop')!;
         overlay.classList.add('active');
 
-        const drawer = document.getElementById('drawer-agent-config');
+        const drawer = document.getElementById('drawer-agent-config')!;
         drawer.classList.add('active');
 
-        const config = AppState.agentConfigs[agentKey];
-        document.getElementById('agent-config-title').textContent = `Configure ${agentName}`;
-        document.getElementById('config-agent-id').value = agentKey;
-        document.getElementById('agent-model-select').value = config.model;
-        document.getElementById('agent-temp-slider').value = config.temperature;
-        document.getElementById('agent-temp-val').textContent = config.temperature.toFixed(1);
-        document.getElementById('agent-threshold-slider').value = config.threshold;
-        document.getElementById('agent-threshold-val').textContent = `${config.threshold}%`;
-        document.getElementById('agent-prompt-input').value = config.prompt;
+        const config = (AppState.agentConfigs as Record<string, AgentConfig>)[agentKey];
+        document.getElementById('agent-config-title')!.textContent = `Configure ${agentName}`;
+        (document.getElementById('config-agent-id') as HTMLInputElement).value = agentKey;
+        (document.getElementById('agent-model-select') as HTMLInputElement).value = config.model as string;
+        (document.getElementById('agent-temp-slider') as HTMLInputElement).value = config.temperature as unknown as string;
+        document.getElementById('agent-temp-val')!.textContent = (config.temperature as number).toFixed(1);
+        (document.getElementById('agent-threshold-slider') as HTMLInputElement).value = config.threshold as unknown as string;
+        document.getElementById('agent-threshold-val')!.textContent = `${config.threshold}%`;
+        (document.getElementById('agent-prompt-input') as HTMLInputElement).value = config.prompt as string;
 
         soundEngine.playChime([392.00, 523.25], 0.12, 0.1);
       });
@@ -1410,13 +1411,13 @@ Return ONLY valid JSON:
   if (formAgentConfig) {
     formAgentConfig.addEventListener('submit', (e) => {
       e.preventDefault();
-      const agentKey = document.getElementById('config-agent-id').value;
-      const config = AppState.agentConfigs[agentKey];
+      const agentKey = (document.getElementById('config-agent-id') as HTMLInputElement).value;
+      const config = (AppState.agentConfigs as Record<string, AgentConfig>)[agentKey];
       if (config) {
-        config.model = document.getElementById('agent-model-select').value;
-        config.temperature = parseFloat(document.getElementById('agent-temp-slider').value);
-        config.threshold = parseInt(document.getElementById('agent-threshold-slider').value);
-        config.prompt = document.getElementById('agent-prompt-input').value;
+        config.model = (document.getElementById('agent-model-select') as HTMLInputElement).value;
+        config.temperature = parseFloat((document.getElementById('agent-temp-slider') as HTMLInputElement).value);
+        config.threshold = parseInt((document.getElementById('agent-threshold-slider') as HTMLInputElement).value);
+        config.prompt = (document.getElementById('agent-prompt-input') as HTMLInputElement).value;
 
         closeDrawers();
         showPremiumToast(`Saved agent configuration settings.`, 'success');

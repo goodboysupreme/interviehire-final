@@ -114,13 +114,13 @@ function buildSubtabsBarHTML(stageKey: string, counts: Record<string, number>, a
 function renderJobDetailPanes(job: Job) {
   const searchVal = (document.getElementById('jd-candidate-search') as HTMLInputElement).value.trim().toLowerCase();
 
-  const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(c => {
+  const jobCandidates = filterCandidatesByDateRange(AppState.candidates!).filter(c => {
     const matchesJob = (getDataSource() === 'api' && job._backend)
       ? c.jobId === job.id
       : (c.jobApplied === job.roleName || c.jobApplied === job.cardName);
     if (!matchesJob) return false;
     if (searchVal) {
-      return c.name.toLowerCase().includes(searchVal) || c.email.toLowerCase().includes(searchVal);
+      return c.name!.toLowerCase().includes(searchVal) || (c.email || '').toLowerCase().includes(searchVal);
     }
     return true;
   });
@@ -160,7 +160,7 @@ function renderJobDetailPanes(job: Job) {
             </div>
           </div>
           <div class="ra-criteria-items">
-            ${criteria.mustHave.map((item, i) => `
+            ${criteria.mustHave!.map((item, i) => `
               <div class="ra-criteria-item must-have">
                 <span class="ra-criteria-num must-have">${i + 1}</span>
                 <span class="ra-criteria-text">${item}</span>
@@ -184,7 +184,7 @@ function renderJobDetailPanes(job: Job) {
             </div>
           </div>
           <div class="ra-criteria-items">
-            ${criteria.redFlags.map((item, i) => `
+            ${criteria.redFlags!.map((item, i) => `
               <div class="ra-criteria-item red-flags">
                 <span class="ra-criteria-num red-flags">${i + 1}</span>
                 <span class="ra-criteria-text">${item}</span>
@@ -207,9 +207,9 @@ function renderJobDetailPanes(job: Job) {
               <p class="ra-criteria-group-desc">Candidates meeting the threshold will be shortlisted; others waitlisted for review.</p>
             </div>
           </div>
-          <div class="ra-criteria-min-match">Minimum match: ${criteria.goodToHaveMinMatch} out of ${criteria.goodToHave.length} criteria</div>
+          <div class="ra-criteria-min-match">Minimum match: ${criteria.goodToHaveMinMatch} out of ${criteria.goodToHave!.length} criteria</div>
           <div class="ra-criteria-items">
-            ${criteria.goodToHave.map((item, i) => `
+            ${criteria.goodToHave!.map((item, i) => `
               <div class="ra-criteria-item good-to-have">
                 <span class="ra-criteria-num good-to-have">${i + 1}</span>
                 <span class="ra-criteria-text">${item}</span>
@@ -236,9 +236,9 @@ function renderJobDetailPanes(job: Job) {
       <div id="ra-scoring-editor-root"></div>
     `);
     document.getElementById('btn-resume-edit-flow')?.addEventListener('click', () => {
-      openJobFlowView(job.id);
+      openJobFlowView(job.id!);
       requestAnimationFrame(() => {
-        document.querySelector('.jf-stage-card[data-stage="resumeAnalysis"]')?.click();
+        (document.querySelector('.jf-stage-card[data-stage="resumeAnalysis"]') as HTMLElement | null)?.click();
       });
     });
 
@@ -300,15 +300,15 @@ function renderJobDetailPanes(job: Job) {
       const allScreeningCands = screeningCands;
       const subtabFilteredCands = screeningCands.filter(c => getCandidateSubtab(c) === activeSubtab);
       const displayScreeningCands = applyStageFilters(subtabFilteredCands, 'screening');
-      const sf = AppState.stageFilters.screening;
+      const sf = AppState.stageFilters!.screening!;
       screeningList.innerHTML = `
         ${addApplicantsHTML}
         ${subtabsHTML}
         <div class="stage-table-container">
           <div class="stage-table-filters">
-            <span class="filter-chip" data-filter="interviewStatus" data-stage="screening">${sf.interviewStatus.length ? '⊗' : '⊕'} Interview Status ${sf.interviewStatus.length ? `<span class="filter-chip-val">${sf.interviewStatus.join(', ')}</span>` : ''}</span>
-            <span class="filter-chip" data-filter="cheatProb" data-stage="screening">${sf.cheatProb.length ? '⊗' : '⊕'} Cheat Probability ${sf.cheatProb.length ? `<span class="filter-chip-val">${sf.cheatProb.join(', ')}</span>` : ''}</span>
-            <span class="filter-chip" data-filter="recruiterScreening" data-stage="screening">⊕ Recruiter Screening ${sf.recruiterScreening.length ? `<span class="filter-chip-val">${sf.recruiterScreening.join(', ')}</span>` : ''}</span>
+            <span class="filter-chip" data-filter="interviewStatus" data-stage="screening">${sf.interviewStatus!.length ? '⊗' : '⊕'} Interview Status ${sf.interviewStatus!.length ? `<span class="filter-chip-val">${sf.interviewStatus!.join(', ')}</span>` : ''}</span>
+            <span class="filter-chip" data-filter="cheatProb" data-stage="screening">${sf.cheatProb!.length ? '⊗' : '⊕'} Cheat Probability ${sf.cheatProb!.length ? `<span class="filter-chip-val">${sf.cheatProb!.join(', ')}</span>` : ''}</span>
+            <span class="filter-chip" data-filter="recruiterScreening" data-stage="screening">⊕ Recruiter Screening ${sf.recruiterScreening!.length ? `<span class="filter-chip-val">${sf.recruiterScreening!.join(', ')}</span>` : ''}</span>
             <span class="filter-chip" data-filter="interviewScore" data-stage="screening">⊕ Interview Score</span>
             ${hasActiveFilters('screening') ? '<button class="btn-filter-reset" data-stage="screening">✕ Reset</button>' : ''}
             <div class="stage-table-actions-bar">
@@ -335,7 +335,7 @@ function renderJobDetailPanes(job: Job) {
             <tbody>
               ${displayScreeningCands.length === 0 ? '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--color-text-faint);">No candidates match the current filters. Try resetting or adjusting them.</td></tr>' : ''}
               ${displayScreeningCands.map(c => {
-        const initials = c.name.split(' ').map(n => n[0]).join('');
+        const initials = c.name!.split(' ').map(n => n[0]).join('');
         const hasReport = c.interviewStatus === 'Incomplete' || c.interviewStatus === 'Completed';
         const sourceIcon = c.source === 'Direct Link' ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>';
         const actionLabel = c.interviewStatus === 'Slot Missed' ? 'Reschedule' : 'Schedule';
@@ -347,7 +347,7 @@ function renderJobDetailPanes(job: Job) {
                       <div class="table-candidate-cell">
                         <span class="cand-name-link">${escapeHTML(c.name)} <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
                         <button class="btn-remarks" data-cand-id="${c.id}">Remarks</button>
-                        <span class="cand-email-sub">${escapeHTML(c.email)}</span>
+                        <span class="cand-email-sub">${escapeHTML(c.email as string)}</span>
                       </div>
                     </td>
                     <td>${c.phone ? escapeHTML(c.phone) : '—'}</td>
@@ -408,19 +408,19 @@ function renderJobDetailPanes(job: Job) {
         </div>
       `;
     } else {
-      const cheatColor = (prob) => {
+      const cheatColor = (prob: string | null | undefined) => {
         if (prob === 'Low') return 'cheat-low';
         if (prob === 'Medium') return 'cheat-medium';
         if (prob === 'High') return 'cheat-high';
         return '';
       };
-      const scoreColor = (score) => {
+      const scoreColor = (score: number | null | undefined) => {
         if (score == null) return '';
         if (score >= 80) return 'score-green';
         if (score >= 60) return 'score-yellow';
         return 'score-red';
       };
-      const screeningBadge = (val) => {
+      const screeningBadge = (val: string | null | undefined) => {
         if (!val) return '—';
         const cls = val === 'Good fit' ? 'fit-good' : val === 'Moderate fit' ? 'fit-moderate' : 'fit-poor';
         return `<span class="screening-fit-badge ${cls}">${val}</span>`;
@@ -429,16 +429,16 @@ function renderJobDetailPanes(job: Job) {
       const allFunctionalCands = functionalCands;
       const subtabFilteredFnCands = functionalCands.filter(c => getCandidateSubtab(c) === activeSubtabFn);
       const displayFunctionalCands = applyStageFilters(subtabFilteredFnCands, 'functional');
-      const ff = AppState.stageFilters.functional;
+      const ff = AppState.stageFilters!.functional!;
       functionalList.innerHTML = `
         ${addApplicantsFnHTML}
         ${subtabsFnHTML}
         <div class="stage-table-container">
           <div class="stage-table-filters">
-            <span class="filter-chip" data-filter="interviewStatus" data-stage="functional">${ff.interviewStatus.length ? '⊗' : '⊕'} Interview Status ${ff.interviewStatus.length ? `<span class="filter-chip-val">${ff.interviewStatus.join(', ')}</span>` : ''}</span>
-            <span class="filter-chip" data-filter="cheatProb" data-stage="functional">${ff.cheatProb.length ? '⊗' : '⊕'} Cheat Probability ${ff.cheatProb.length ? `<span class="filter-chip-val">${ff.cheatProb.join(', ')}</span>` : ''}</span>
+            <span class="filter-chip" data-filter="interviewStatus" data-stage="functional">${ff.interviewStatus!.length ? '⊗' : '⊕'} Interview Status ${ff.interviewStatus!.length ? `<span class="filter-chip-val">${ff.interviewStatus!.join(', ')}</span>` : ''}</span>
+            <span class="filter-chip" data-filter="cheatProb" data-stage="functional">${ff.cheatProb!.length ? '⊗' : '⊕'} Cheat Probability ${ff.cheatProb!.length ? `<span class="filter-chip-val">${ff.cheatProb!.join(', ')}</span>` : ''}</span>
             <span class="filter-chip" data-filter="interviewScore" data-stage="functional">⊕ Interview Score</span>
-            <span class="filter-chip" data-filter="recruiterScreening" data-stage="functional">⊕ Recruiter Screening ${ff.recruiterScreening.length ? `<span class="filter-chip-val">${ff.recruiterScreening.join(', ')}</span>` : ''}</span>
+            <span class="filter-chip" data-filter="recruiterScreening" data-stage="functional">⊕ Recruiter Screening ${ff.recruiterScreening!.length ? `<span class="filter-chip-val">${ff.recruiterScreening!.join(', ')}</span>` : ''}</span>
             <span class="filter-chip" data-filter="actions" data-stage="functional">⊕ Actions</span>
             ${hasActiveFilters('functional') ? '<button class="btn-filter-reset" data-stage="functional">✕ Reset</button>' : ''}
             <div class="stage-table-actions-bar">
@@ -465,7 +465,7 @@ function renderJobDetailPanes(job: Job) {
             <tbody>
               ${displayFunctionalCands.length === 0 ? '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--color-text-faint);">No candidates match the current filters. Try resetting or adjusting them.</td></tr>' : ''}
               ${displayFunctionalCands.map(c => {
-        const initials = c.name.split(' ').map(n => n[0]).join('');
+        const initials = c.name!.split(' ').map(n => n[0]).join('');
         const sourceIcon = c.source === 'Direct Link' ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>';
         return `
                   <tr data-candidate-id="${c.id}">
@@ -474,7 +474,7 @@ function renderJobDetailPanes(job: Job) {
                       <div class="table-candidate-cell">
                         <span class="cand-name-link">${escapeHTML(c.name)} <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
                         <button class="btn-remarks" data-cand-id="${c.id}">Remarks</button>
-                        <span class="cand-email-sub">${escapeHTML(c.email)}</span>
+                        <span class="cand-email-sub">${escapeHTML(c.email as string)}</span>
                       </div>
                     </td>
                     <td>${c.phone ? escapeHTML(c.phone) : '—'}</td>
@@ -541,13 +541,13 @@ function renderJobDetailPanes(job: Job) {
 
     pane.querySelectorAll('.subtab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const candId = btn.parentElement.getAttribute('data-cand-id');
+        const candId = btn.parentElement!.getAttribute('data-cand-id');
         const tabName = btn.getAttribute('data-tab');
 
         // Stop audio playing if swapping tabs
         stopActiveCardPlayer();
 
-        activeCandidateSubTabs[candId] = tabName;
+        activeCandidateSubTabs[candId!] = tabName!;
         soundEngine.playClick();
         renderJobDetailPanes(job);
       });
@@ -556,7 +556,7 @@ function renderJobDetailPanes(job: Job) {
     pane.querySelectorAll('.btn-stage-reject').forEach(btn => {
       btn.addEventListener('click', () => {
         const candId = btn.getAttribute('data-candidate-id');
-        updateCandidateStatus(candId, 'Rejected');
+        updateCandidateStatus(candId!, 'Rejected');
       });
     });
 
@@ -564,14 +564,14 @@ function renderJobDetailPanes(job: Job) {
       btn.addEventListener('click', () => {
         const candId = btn.getAttribute('data-candidate-id');
         const nextStage = btn.getAttribute('data-next-stage');
-        updateCandidateStatus(candId, nextStage);
+        updateCandidateStatus(candId!, nextStage!);
       });
     });
 
     pane.querySelectorAll('.btn-player-play').forEach(btn => {
       btn.addEventListener('click', () => {
         const candId = btn.getAttribute('data-play-id');
-        toggleCardPlayer(candId);
+        toggleCardPlayer(candId!);
       });
     });
 
@@ -579,7 +579,7 @@ function renderJobDetailPanes(job: Job) {
       link.addEventListener('click', (e) => {
         e.preventDefault();
         const candId = link.getAttribute('data-cand-id');
-        openReportDrawerForCandidate(candId);
+        openReportDrawerForCandidate(candId!);
       });
     });
 
@@ -592,41 +592,41 @@ function renderJobDetailPanes(job: Job) {
 
     pane.querySelectorAll('.table-checkbox-all').forEach(cb => {
       cb.addEventListener('change', () => {
-        const table = cb.closest('table');
+        const table = cb.closest('table')!;
         const rows = table.querySelectorAll('.table-checkbox-row');
-        rows.forEach(r => { r.checked = cb.checked; });
-        const info = cb.closest('.stage-table-container').querySelector('.table-selection-info');
-        if (info) info.textContent = `${cb.checked ? rows.length : 0} of ${rows.length} row(s) selected.`;
+        rows.forEach(r => { (r as HTMLInputElement).checked = (cb as HTMLInputElement).checked; });
+        const info = cb.closest('.stage-table-container')!.querySelector('.table-selection-info');
+        if (info) info.textContent = `${(cb as HTMLInputElement).checked ? rows.length : 0} of ${rows.length} row(s) selected.`;
         soundEngine.playClick();
       });
     });
 
     pane.querySelectorAll('.table-checkbox-row').forEach(cb => {
       cb.addEventListener('change', () => {
-        const table = cb.closest('table');
+        const table = cb.closest('table')!;
         const rows = table.querySelectorAll('.table-checkbox-row');
         const checked = table.querySelectorAll('.table-checkbox-row:checked').length;
-        const info = cb.closest('.stage-table-container').querySelector('.table-selection-info');
+        const info = cb.closest('.stage-table-container')!.querySelector('.table-selection-info');
         if (info) info.textContent = `${checked} of ${rows.length} row(s) selected.`;
       });
     });
 
-    const jobCands = AppState.candidates.filter(c => {
+    const jobCands = AppState.candidates!.filter(c => {
       if (getDataSource() === 'api' && job._backend) {
         return c.jobId === job.id;
       }
       return c.jobApplied === job.roleName || c.jobApplied === job.cardName;
     });
-    const stageStatusMap = { screening: 'Screening', functional: 'Functional' };
+    const stageStatusMap: Record<string, string> = { screening: 'Screening', functional: 'Functional' };
     pane.querySelectorAll('.filter-chip[data-filter]').forEach(chip => {
       chip.addEventListener('click', (e) => {
         e.stopPropagation();
         soundEngine.playClick();
         const filterType = chip.getAttribute('data-filter');
         const stageKey = chip.getAttribute('data-stage');
-        const stageStatus = stageStatusMap[stageKey];
+        const stageStatus = stageStatusMap[stageKey!];
         const stageCands = stageStatus ? jobCands.filter(c => c.status === stageStatus) : jobCands;
-        buildFilterDropdown(chip, filterType, stageCands, stageKey);
+        buildFilterDropdown(chip, filterType!, stageCands, stageKey!);
       });
     });
 
@@ -634,8 +634,8 @@ function renderJobDetailPanes(job: Job) {
       btn.addEventListener('click', () => {
         soundEngine.playClick();
         const stageKey = btn.getAttribute('data-stage');
-        if (stageKey && AppState.stageFilters[stageKey]) {
-          AppState.stageFilters[stageKey] = { interviewStatus: [], cheatProb: [], recruiterScreening: [], scoreMin: null, scoreMax: null, actions: [] };
+        if (stageKey && AppState.stageFilters![stageKey]) {
+          AppState.stageFilters![stageKey] = { interviewStatus: [], cheatProb: [], recruiterScreening: [], scoreMin: null, scoreMax: null, actions: [] };
           renderJobDetailPanes(job);
         }
       });
@@ -645,7 +645,7 @@ function renderJobDetailPanes(job: Job) {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         soundEngine.playClick();
-        const existing = btn.parentElement.querySelector('.bulk-actions-dropdown');
+        const existing = btn.parentElement!.querySelector('.bulk-actions-dropdown');
         if (existing) { existing.remove(); return; }
         document.querySelectorAll('.bulk-actions-dropdown').forEach(d => d.remove());
 
@@ -653,7 +653,7 @@ function renderJobDetailPanes(job: Job) {
         const checked = container?.querySelectorAll('.table-checkbox-row:checked') || [];
 
         const getSelected = () => {
-          const ids = [], names = [];
+          const ids: string[] = [], names: string[] = [];
           checked.forEach(cb => {
             const row = cb.closest('tr');
             const cid = row?.getAttribute('data-candidate-id');
@@ -684,7 +684,7 @@ function renderJobDetailPanes(job: Job) {
         }
         dd.addEventListener('click', async (ev) => {
           ev.stopPropagation();
-          const item = ev.target.closest('.bulk-dd-item');
+          const item = (ev.target as HTMLElement).closest('.bulk-dd-item');
           if (!item) return;
           const action = item.getAttribute('data-action');
           const { ids, names } = getSelected();
@@ -708,7 +708,7 @@ function renderJobDetailPanes(job: Job) {
           }
           if (action === 'advance') {
             const stages = ['Resume', 'Screening', 'Functional', 'Hired'];
-            const syncs = [];
+            const syncs: Promise<unknown>[] = [];
             // On the Resume Analysis table only genuine Resume-stage rows may be
             // advanced. Candidates already in Screening/Functional/Hired now also
             // render here (table shows all-except-Rejected), so bulk-advance must
@@ -716,7 +716,7 @@ function renderJobDetailPanes(job: Job) {
             let advanceIds = ids;
             if (isResumeStage) {
               advanceIds = ids.filter(cid => {
-                const c = AppState.candidates.find(x => x.id === cid);
+                const c = AppState.candidates!.find(x => x.id === cid);
                 return c && c.status === 'Resume';
               });
               const skipped = ids.length - advanceIds.length;
@@ -726,9 +726,9 @@ function renderJobDetailPanes(job: Job) {
               if (advanceIds.length === 0) { dd.remove(); return; }
             }
             advanceIds.forEach(cid => {
-              const cand = AppState.candidates.find(c => c.id === cid);
+              const cand = AppState.candidates!.find(c => c.id === cid);
               if (cand) {
-                const idx = stages.indexOf(cand.status);
+                const idx = stages.indexOf(cand.status as string);
                 if (idx < stages.length - 1) {
                   const next = stages[idx + 1];
                   const keep = { jobApplied: cand.jobApplied, jobId: cand.jobId, registeredOn: cand.registeredOn };
@@ -758,7 +758,7 @@ function renderJobDetailPanes(job: Job) {
             showPremiumToast(`Advanced ${advanceIds.length} candidate(s) to next stage.`, 'success');
           } else if (action === 'reject') {
             ids.forEach(cid => {
-              const cand = AppState.candidates.find(c => c.id === cid);
+              const cand = AppState.candidates!.find(c => c.id === cid);
               if (cand) {
                 cand.status = 'Rejected';
                 if (cand._backend && getDataSource() === 'api') {
@@ -772,17 +772,17 @@ function renderJobDetailPanes(job: Job) {
             refreshAfterStageChange();
             showPremiumToast(`Rejected ${ids.length} candidate(s).`, 'success');
           } else if (action === 'schedule' || action === 'reschedule') {
-            openScheduleModal({ mode: action, name: label, count: ids.length }, async ({ start, end, timezone, slot }) => {
+            openScheduleModal({ mode: action, name: label, count: ids.length }, async ({ start, end, timezone, slot }: { start: any; end: any; timezone: any; slot: any }) => {
               if (getDataSource() === 'api') {
                 showPremiumToast(`Scheduling ${ids.length} candidate(s) and sending email invites...`, 'info');
                 try {
                   const utcIso = new Date(start).toISOString();
                   await Promise.all(ids.map(async (cid) => {
-                    const c2 = AppState.candidates.find(c => c.id === cid);
+                    const c2 = AppState.candidates!.find(c => c.id === cid);
                     if (!c2) return;
                     const stage = c2.status?.toLowerCase() === 'screening' ? 'screening' : 'functional';
-                    const scheduleId = await ensureBackendApplicantId(c2, job.id);
-                    const updated = await apiScheduleCandidate(scheduleId, utcIso, stage);
+                    const scheduleId = await ensureBackendApplicantId(c2, job.id!);
+                    const updated = await apiScheduleCandidate(scheduleId!, utcIso, stage);
                     if (updated) {
                       Object.assign(c2, updated);
                     } else {
@@ -795,11 +795,11 @@ function renderJobDetailPanes(job: Job) {
                   renderJobDetailPanes(job);
                   showPremiumToast(`${action === 'schedule' ? 'Scheduled' : 'Rescheduled'} ${ids.length} candidate(s) for ${slot} and email invites sent.`, 'success');
                 } catch (err) {
-                  showPremiumToast(`Failed to schedule candidates: ${err.message || err}`, 'error');
+                  showPremiumToast(`Failed to schedule candidates: ${(err as any).message || err}`, 'error');
                 }
               } else {
                 ids.forEach(cid => {
-                  const cand = AppState.candidates.find(c => c.id === cid);
+                  const cand = AppState.candidates!.find(c => c.id === cid);
                   if (cand) {
                     cand.attemptedAt = slot;
                     cand.scheduledWindow = { start, end, timezone };
@@ -816,9 +816,9 @@ function renderJobDetailPanes(job: Job) {
           }
           dd.remove();
         });
-        btn.style.position = 'relative';
+        (btn as HTMLElement).style.position = 'relative';
         btn.appendChild(dd);
-        const closeDD = (ev) => { if (!dd.contains(ev.target) && ev.target !== btn) { dd.remove(); document.removeEventListener('click', closeDD); } };
+        const closeDD = (ev: Event) => { if (!dd.contains(ev.target as Node) && ev.target !== btn) { dd.remove(); document.removeEventListener('click', closeDD); } };
         setTimeout(() => document.addEventListener('click', closeDD), 0);
       });
     });
@@ -836,12 +836,12 @@ function renderJobDetailPanes(job: Job) {
         soundEngine.playClick();
         const mode = btn.classList.contains('btn-reschedule') ? 'reschedule' : 'schedule';
         const candId = btn.getAttribute('data-candidate-id');
-        const cand = AppState.candidates.find(c => c.id === candId);
+        const cand = AppState.candidates!.find(c => c.id === candId);
         const name = cand?.name || btn.closest('tr')?.querySelector('.cand-name-link')?.textContent?.trim() || 'Candidate';
         openScheduleModal(
           { mode, name, email: cand?.email || '', slotTime: cand?.attemptedAt || '' },
-          async ({ start, end, timezone, slot }) => {
-            const c2 = AppState.candidates.find(c => c.id === candId);
+          async ({ start, end, timezone, slot }: { start: any; end: any; timezone: any; slot: any }) => {
+            const c2 = AppState.candidates!.find(c => c.id === candId);
             if (!c2) return;
 
             if (getDataSource() === 'api') {
@@ -849,8 +849,8 @@ function renderJobDetailPanes(job: Job) {
               try {
                 const stage = c2.status?.toLowerCase() === 'screening' ? 'screening' : 'functional';
                 const utcIso = new Date(start).toISOString();
-                const scheduleId = await ensureBackendApplicantId(c2, job.id);
-                const updated = await apiScheduleCandidate(scheduleId, utcIso, stage);
+                const scheduleId = await ensureBackendApplicantId(c2, job.id!);
+                const updated = await apiScheduleCandidate(scheduleId!, utcIso, stage);
 
                 if (updated) {
                   Object.assign(c2, updated);
@@ -863,7 +863,7 @@ function renderJobDetailPanes(job: Job) {
                 renderJobDetailPanes(job);
                 showPremiumToast(`${mode === 'reschedule' ? 'Rescheduled' : 'Scheduled'} ${c2.name} for ${slot} and email invite sent.`, 'success');
               } catch (err) {
-                showPremiumToast(`Failed to schedule candidate: ${err.message || err}`, 'error');
+                showPremiumToast(`Failed to schedule candidate: ${(err as any).message || err}`, 'error');
               }
             } else {
               c2.interviewStatus = mode === 'reschedule' ? 'Incomplete' : 'Not Started';
@@ -882,9 +882,9 @@ function renderJobDetailPanes(job: Job) {
       sel.addEventListener('change', () => {
         soundEngine.playClick();
         const candId = sel.getAttribute('data-cand-id');
-        const newVal = sel.value;
+        const newVal = (sel as HTMLSelectElement).value;
         if (candId && newVal) {
-          const cand = AppState.candidates.find(c => c.id === candId);
+          const cand = AppState.candidates!.find(c => c.id === candId);
           if (cand) {
             if (newVal === 'advance') updateCandidateStatus(candId, 'Hired');
             else if (newVal === 'reject') updateCandidateStatus(candId, 'Rejected');
@@ -896,15 +896,15 @@ function renderJobDetailPanes(job: Job) {
 
     pane.querySelectorAll('.stage-table-container').forEach(container => {
       const tbody = container.querySelector('tbody');
-      const rppSelect = container.querySelector('.rows-per-page');
+      const rppSelect = container.querySelector('.rows-per-page') as HTMLSelectElement | null;
       const pageInfo = container.querySelector('.table-pagination span:nth-child(3)');
       const selInfo = container.querySelector('.table-selection-info');
-      const pagBtns = container.querySelectorAll('.pagination-btns button');
+      const pagBtns = container.querySelectorAll('.pagination-btns button') as NodeListOf<HTMLButtonElement>;
       if (!tbody || !rppSelect) return;
       let currentPage = 1;
-      const allRows = Array.from(tbody.querySelectorAll('tr'));
+      const allRows = Array.from(tbody.querySelectorAll('tr')) as HTMLElement[];
       function paginate() {
-        const perPage = parseInt(rppSelect.value) || 25;
+        const perPage = parseInt(rppSelect!.value) || 25;
         const totalRows = allRows.length;
         const totalPages = Math.max(1, Math.ceil(totalRows / perPage));
         if (currentPage > totalPages) currentPage = totalPages;
@@ -953,9 +953,9 @@ function renderJobDetailPanes(job: Job) {
 // advance/reject path so stage counts never go stale after a stage change.
 // Single source of truth for the interview-status chip across stage panes.
 // A candidate with no recorded status reads as "Not Started" — never "Completed".
-function interviewStatusChip(status) {
-  const ic = (inner) => `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">${inner}</svg>`;
-  const chip = (cls, svg, label) => `<span class="status-chip ${cls}">${svg} ${label}</span>`;
+function interviewStatusChip(status: string | null | undefined) {
+  const ic = (inner: string) => `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">${inner}</svg>`;
+  const chip = (cls: string, svg: string, label: string) => `<span class="status-chip ${cls}">${svg} ${label}</span>`;
   switch (status) {
     case 'Completed': return chip('completed', ic('<polyline points="20 6 9 17 4 12"></polyline>'), 'Completed');
     case 'Incomplete': return chip('incomplete', ic('<line x1="5" y1="12" x2="19" y2="12"></line>'), 'Incomplete');
@@ -971,17 +971,17 @@ function refreshAfterStageChange() {
   updateSummaryMetrics();
   renderAnalyticsTable();
 
-  const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
+  const activeJob = AppState.jobs!.find(j => j.id === AppState.activeJobId);
   if (activeJob) {
     const elScreening = document.getElementById('jd-count-screening');
-    if (elScreening) elScreening.textContent = activeJob.pipeline.screening;
+    if (elScreening) elScreening.textContent = activeJob.pipeline!.screening as any;
     const elFunctional = document.getElementById('jd-count-functional');
-    if (elFunctional) elFunctional.textContent = activeJob.pipeline.functional;
+    if (elFunctional) elFunctional.textContent = activeJob.pipeline!.functional as any;
 
     renderFunnelStages(activeJob);
     renderFunnelInsights(activeJob);
 
-    const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(c => {
+    const jobCandidates = filterCandidatesByDateRange(AppState.candidates!).filter(c => {
       if (getDataSource() === 'api' && activeJob._backend) {
         return c.jobId === activeJob.id;
       }
@@ -993,15 +993,15 @@ function refreshAfterStageChange() {
     renderJobDetailPanes(activeJob);
   }
 
-  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
+  if (document.getElementById('jobs-board-container') && (document.getElementById('jobs-board-container') as HTMLElement).style.display !== 'none') {
     renderKanbanBoard();
   } else {
     renderJobCards();
   }
 }
 
-function updateCandidateStatus(candId, newStatus) {
-  const candidate = AppState.candidates.find(c => c.id === candId);
+function updateCandidateStatus(candId: string, newStatus: string) {
+  const candidate = AppState.candidates!.find(c => c.id === candId);
   if (!candidate) return;
 
   const oldStatus = candidate.status;
@@ -1055,7 +1055,7 @@ export { renderJobDetailPanes, updateCandidateStatus };
 // ── Add Applicants panel: shared HTML builder ────────────────────────────────
 // Builds a clean header section with a '+ Add Applicants' button that redirects to Sourcing.
 // `paneKey` is 'resume', 'screening', or 'functional'.
-function buildAddApplicantsPanel(paneKey, count) {
+function buildAddApplicantsPanel(paneKey: string, count: number) {
   const label = paneKey === 'screening' ? 'Recruiter Screening'
     : paneKey === 'functional' ? 'Functional Interview'
       : 'Resume Analysis';
@@ -1072,7 +1072,7 @@ function buildAddApplicantsPanel(paneKey, count) {
 
 // ── Add Applicants panel: event wiring ──────────────────────────────────────
 // Overridden to redirect to the main Sourcing view with the target stage context.
-function bindAddApplicantsPanel(job, paneKey) {
+function bindAddApplicantsPanel(job: Job, paneKey: string) {
   const addBtn = document.getElementById(`btn-add-applicants-${paneKey}`);
   if (addBtn) {
     addBtn.addEventListener('click', (e) => {

@@ -430,7 +430,7 @@ function renderAnalyticsTable() {
     tbody.querySelectorAll('.btn-tbl-reject').forEach(btn => {
       btn.addEventListener('click', () => {
         const candId = btn.getAttribute('data-candidate-id');
-        updateCandidateStatus(candId, 'Rejected');
+        updateCandidateStatus(candId!, 'Rejected');
         renderAnalyticsTable();
       });
     });

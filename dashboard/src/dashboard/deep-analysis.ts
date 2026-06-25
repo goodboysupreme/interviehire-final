@@ -498,11 +498,11 @@ function dimRow(d: any) {
   return `<div class="da-dim"><span class="da-dim-name" title="${escapeHTML(d.label)}">${escapeHTML(d.label)}</span><span class="da-dim-track"><span class="da-dim-fill" style="width:${d.score}%;background:${c};"></span></span><span class="da-dim-score" style="color:${c};">${d.score}</span></div>`;
 }
 
-function answerCard(r) {
+function answerCard(r: any) {
   const open = daUi.openAnswerId === r.answerId;
   const c = scoreColor(r.overallScore);
   const mac = r.modelAnswerComparison || {};
-  const dims = Object.entries(r.dimensionScores)
+  const dims = Object.entries(r.dimensionScores as Record<string, any>)
     .map(([d, v]) => ({
       key: d, label: prettyDim(d), score: v.score, reason: v.reason || '',
       evidence: (v.evidence || []).filter(Boolean), missing: (v.missing || []).filter(Boolean),
@@ -533,8 +533,8 @@ function answerCard(r) {
         ${openDim ? dimEvidence(openDim) : ''}
         ${(mac.coveredRequiredPoints || []).length || (mac.missedRequiredPoints || []).length ? `
           <div class="da-mac">
-            ${(mac.coveredRequiredPoints || []).map((p) => `<div class="da-mac-row ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>${escapeHTML(p)}</div>`).join('')}
-            ${(mac.missedRequiredPoints || []).map((p) => `<div class="da-mac-row miss"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>${escapeHTML(p)}</div>`).join('')}
+            ${(mac.coveredRequiredPoints || []).map((p: any) => `<div class="da-mac-row ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>${escapeHTML(p)}</div>`).join('')}
+            ${(mac.missedRequiredPoints || []).map((p: any) => `<div class="da-mac-row miss"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>${escapeHTML(p)}</div>`).join('')}
           </div>` : ''}
         <p class="da-ans-summary">${escapeHTML(r.summary)}</p>
       </div>` : ''}
@@ -544,26 +544,26 @@ function answerCard(r) {
 // Evidence panel for one dimension: the model's reason, the transcript quote(s)
 // it cited, and any required point it found missing. This is the grounding that
 // turns a bare score into something a recruiter can audit.
-function dimEvidence(d) {
+function dimEvidence(d: any) {
   const c = scoreColor(d.score);
   return `
   <div class="da-evidence">
     <div class="da-evidence-head"><span class="da-evidence-dim" style="border-color:${c}66;color:${c};">${escapeHTML(d.label)} · ${d.score}</span>${d.reason ? `<span class="da-evidence-reason">${escapeHTML(d.reason)}</span>` : ''}</div>
-    ${d.evidence.map((q) => `<blockquote class="da-quote">${escapeHTML(q)}</blockquote>`).join('')}
-    ${d.missing.map((m) => `<div class="da-mac-row miss"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>${escapeHTML(m)}</div>`).join('')}
+    ${d.evidence.map((q: any) => `<blockquote class="da-quote">${escapeHTML(q)}</blockquote>`).join('')}
+    ${d.missing.map((m: any) => `<div class="da-mac-row miss"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>${escapeHTML(m)}</div>`).join('')}
     ${!d.evidence.length && !d.missing.length && !d.reason ? '<p class="da-evidence-empty">No transcript evidence was captured for this dimension.</p>' : ''}
   </div>`;
 }
 
-function bind(container, job) {
+function bind(container: HTMLElement, job: Job) {
   container.onclick = (e) => {
-    const el = e.target.closest('[data-action]');
+    const el = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null;
     if (!el) return;
     const action = el.dataset.action;
-    if (action === 'select') { daUi.selectedId = el.dataset.cid; daUi.openAnswerId = null; daUi.openDimKey = null; daUi.showAllDims = false; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
+    if (action === 'select') { daUi.selectedId = el.dataset.cid as string; daUi.openAnswerId = null; daUi.openDimKey = null; daUi.showAllDims = false; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'back') { daUi.selectedId = null; daUi.openDimKey = null; daUi.showAllDims = false; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
-    else if (action === 'open-report') { soundEngine.playClick(); const cid = el.dataset.cid; import('./report-page').then((m) => m.openCandidateReportPage && m.openCandidateReportPage(cid)); }
-    else if (action === 'toggle-answer') { const a = el.dataset.aid; daUi.openAnswerId = daUi.openAnswerId === a ? null : a; daUi.openDimKey = null; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
+    else if (action === 'open-report') { soundEngine.playClick(); const cid = el.dataset.cid as string; import('./report-page').then((m) => m.openCandidateReportPage && m.openCandidateReportPage(cid)); }
+    else if (action === 'toggle-answer') { const a = el.dataset.aid as string; daUi.openAnswerId = daUi.openAnswerId === a ? null : a; daUi.openDimKey = null; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'toggle-test') { daUi.testOpen = !daUi.testOpen; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'refresh-test') { testReports.delete(job.id); soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'toggle-dims') { daUi.showAllDims = !daUi.showAllDims; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
@@ -571,9 +571,9 @@ function bind(container, job) {
   };
   container.onkeydown = (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    const t = e.target;
+    const t = e.target as HTMLElement;
     if (t.classList && t.classList.contains('da-row')) {
-      e.preventDefault(); daUi.selectedId = t.dataset.cid; daUi.openAnswerId = null; daUi.openDimKey = null; daUi.showAllDims = false; renderDeepAnalysisPane(job, container);
+      e.preventDefault(); daUi.selectedId = t.dataset.cid as string; daUi.openAnswerId = null; daUi.openDimKey = null; daUi.showAllDims = false; renderDeepAnalysisPane(job, container);
     } else if (t.classList && t.classList.contains('da-dim-mini') && t.dataset.dim) {
       e.preventDefault(); const k = `${t.dataset.aid}::${t.dataset.dim}`; daUi.openDimKey = daUi.openDimKey === k ? null : k; renderDeepAnalysisPane(job, container);
     }

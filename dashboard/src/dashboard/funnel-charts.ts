@@ -257,7 +257,7 @@ function drawFunnelSVG(job: Job, candidates: Candidate[]) {
     funnelTooltipEl!.style.left = (clientX + 14) + 'px';
     funnelTooltipEl!.style.top = (clientY - 10) + 'px';
 
-    svgEl.querySelectorAll('g[data-stage-idx]').forEach(g => {
+    svgEl!.querySelectorAll('g[data-stage-idx]').forEach(g => {
       const gi = parseInt(g.getAttribute('data-stage-idx') as string);
       const paths = g.querySelectorAll('path');
       if (gi === idx) {
@@ -275,7 +275,7 @@ function drawFunnelSVG(job: Job, candidates: Candidate[]) {
   function hideTooltip() {
     activeSegIdx = -1;
     funnelTooltipEl!.style.display = 'none';
-    svgEl.querySelectorAll('g[data-stage-idx] path').forEach(p => {
+    svgEl!.querySelectorAll('g[data-stage-idx] path').forEach(p => {
       p.setAttribute('opacity', '0.9');
       (p as SVGElement).style.filter = '';
     });
