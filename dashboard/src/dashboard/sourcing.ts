@@ -683,32 +683,13 @@ async function importCsvCandidates() {
   const activeJob: Job | undefined = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
-  // Determine the ApplicantSource to send to backend based on which stage triggered sourcing.
-  // 'screening' stage → source='scheduled' (screening_status=pending on backend)
-  // 'functional' stage → source='functional' (functional_status=pending on backend)
-  // null / 'resume' → source='bulk_upload' (resume analysis stage)
-  const sourceMap: Record<string, string> = { screening: 'scheduled', functional: 'functional', resume: 'bulk_upload' };
-  const apiSource = sourceMap[currentTargetStage as string] || 'bulk_upload';
-
-  csvParsedCandidates.forEach(cand => {
-    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob, null, currentTargetStage);
-  });
-
-
-  // Persist to backend if in API mode
-  import('./api').then(({ isApiMode, apiAddApplicantsBulk }) => {
-    if (isApiMode() && activeJob._backend) {
-      const payload = csvParsedCandidates.map(cand => ({
-        name: cand.name,
-        email: cand.email,
-        phone: cand.phone || null,
-        source: apiSource,
-      }));
-      apiAddApplicantsBulk(activeJob.id!, payload).catch((err: any) => {
-        console.warn('CSV bulk add to backend failed:', err);
-      });
-    }
-  }).catch(() => { });
+  // Stage is carried on each candidate's status (set from currentTargetStage in
+  // addCandidateToAppState); persistImportedCandidates (below) derives the backend
+  // `source` from that status, so screening/functional adds route to the right
+  // stage and resume adds stay Resume-only. entry_method ('bulk_upload') is sent
+  // alongside for the Source column. Single persist path — matches importResumesCandidates.
+  const localIds = csvParsedCandidates.map(cand =>
+    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob, null, currentTargetStage));
 
   soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
   const stageLabel = currentTargetStage ? { screening: 'Recruiter Screening', functional: 'Functional Interview', resume: 'Resume Analysis' }[currentTargetStage] : activeJob.roleName;
@@ -737,7 +718,7 @@ async function importCsvCandidates() {
 
   // Persist to the backend BEFORE navigating — the job-detail hydrate then fetches
   // and shows them, so no manual refresh is needed (api mode).
-  await persistImportedCandidates(localIds, activeJob);
+  await persistImportedCandidates(localIds, activeJob, 'bulk_upload');
   navigateToJobDetail(AppState.activeJobId!);
 }
 
@@ -926,7 +907,7 @@ async function importResumesCandidates() {
 
   // Persist first so the candidates survive the hydrate (no manual refresh), then
   // analyse against their real backend ids (the resume caches were re-keyed).
-  const backendIds = await persistImportedCandidates(importedCandIds, activeJob);
+  const backendIds = await persistImportedCandidates(importedCandIds, activeJob, 'bulk_upload');
   navigateToJobDetail(AppState.activeJobId!);
 
   if (!currentTargetStage || currentTargetStage === 'resume') {
@@ -1163,29 +1144,12 @@ async function importManualQueue() {
   const activeJob: Job | undefined = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
-  // Determine ApplicantSource for backend based on targetStage
-  const sourceMap: Record<string, string> = { screening: 'scheduled', functional: 'functional', resume: 'bulk_upload' };
-  const apiSource = sourceMap[currentTargetStage as string] || 'bulk_upload';
-
-  sourcingQueue.forEach(cand => {
-    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob, null, currentTargetStage);
-  });
-
-
-  // Persist each candidate to backend if in API mode
-  import('./api').then(({ isApiMode, apiAddApplicantsBulk }) => {
-    if (isApiMode() && activeJob._backend) {
-      const payload = sourcingQueue.map(cand => ({
-        name: cand.name,
-        email: cand.email,
-        phone: cand.phone || null,
-        source: apiSource,
-      }));
-      apiAddApplicantsBulk(activeJob.id!, payload).catch((err: any) => {
-        console.warn('Manual bulk add to backend failed:', err);
-      });
-    }
-  }).catch(() => { });
+  // Stage is carried on each candidate's status (set from currentTargetStage in
+  // addCandidateToAppState); persistImportedCandidates (below) derives the backend
+  // `source` from that status. entry_method ('direct_link') is sent alongside for
+  // the Source column. Single persist path — matches importResumesCandidates.
+  const localIds = sourcingQueue.map(cand =>
+    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob, null, currentTargetStage));
 
   soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
   const stageLabel = currentTargetStage ? { screening: 'Recruiter Screening', functional: 'Functional Interview', resume: 'Resume Analysis' }[currentTargetStage] : activeJob.roleName;
@@ -1206,7 +1170,7 @@ async function importManualQueue() {
   }
 
   // Persist before navigating so the hydrate shows them without a manual refresh.
-  await persistImportedCandidates(localIds, activeJob);
+  await persistImportedCandidates(localIds, activeJob, 'direct_link');
   navigateToJobDetail(AppState.activeJobId!);
 }
 
@@ -1281,7 +1245,7 @@ function addCandidateToAppState(name: string, email: string | null, phone: strin
 // jobId === job.id, which the next hydrate then wipes — so rather than leave an
 // invisible ghost (silent loss), we drop the failed rows and tell the recruiter
 // exactly who failed and why, so they can fix and re-import.
-async function persistImportedCandidates(localIds: string[], job: Job): Promise<string[]> {
+async function persistImportedCandidates(localIds: string[], job: Job, entryMethod: string | null = null): Promise<string[]> {
   if (!isApiMode() || !job || !job._backend) return localIds;
   const ids: string[] = [];
   const failed: Candidate[] = [];
@@ -1295,7 +1259,9 @@ async function persistImportedCandidates(localIds: string[], job: Job): Promise<
       // persists with source='functional' so they appear in Functional Interview;
       // analyse-mode (status 'Resume') sends no source and stays Resume-only.
       const source = cand.status === 'Screening' ? 'scheduled' : (cand.status === 'Functional' ? 'functional' : null);
-      const created = await apiAddApplicant(job.id!, { name: cand.name, email: cand.email, phone: cand.phone, source: source as any });
+      // entryMethod (how added: bulk_upload | direct_link) is independent of `source`
+      // (stage routing) and feeds the "Source" column. null for callers that don't pass it.
+      const created = await apiAddApplicant(job.id!, { name: cand.name, email: cand.email, phone: cand.phone, source: source as any, entryMethod } as any);
       if (!created || !created.id) throw new Error('no id returned');
       const uuid = created.id;
       if (resumeTextCache[localId] != null) { resumeTextCache[uuid] = resumeTextCache[localId]; delete resumeTextCache[localId]; }

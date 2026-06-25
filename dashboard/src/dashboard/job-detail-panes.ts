@@ -1,5 +1,5 @@
 import { document, requestAnimationFrame, setTimeout } from './runtime';
-import { escapeHTML } from './escape';
+import { escapeHTML, sourceLabel } from './escape';
 import { saveStateToLocalStorage } from './ai-api';
 import { renderDeepAnalysisPane } from './deep-analysis';
 import { renderInterviewAnalysisStage } from './interview-analysis';
@@ -337,7 +337,7 @@ function renderJobDetailPanes(job: Job) {
               ${displayScreeningCands.map(c => {
         const initials = c.name!.split(' ').map(n => n[0]).join('');
         const hasReport = c.interviewStatus === 'Incomplete' || c.interviewStatus === 'Completed';
-        const sourceIcon = c.source === 'Direct Link' ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>';
+        const sourceIcon = c.entryMethod === 'direct_link' ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>';
         const actionLabel = c.interviewStatus === 'Slot Missed' ? 'Reschedule' : 'Schedule';
         const actionClass = c.interviewStatus === 'Slot Missed' ? 'btn-reschedule' : 'btn-schedule';
         return `
@@ -355,7 +355,7 @@ function renderJobDetailPanes(job: Job) {
                     <td>—</td>
                     <td>—</td>
                     <td>${hasReport ? `<a href="#" class="report-link" data-cand-id="${c.id}">Report <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : '—'}</td>
-                    <td><span class="source-badge">${sourceIcon} ${c.source || '—'}</span></td>
+                    <td><span class="source-badge">${sourceIcon} ${sourceLabel(c.entryMethod)}</span></td>
                     <td>${c.attemptedAt || '—'}</td>
                     <td><button class="${actionClass}" data-candidate-id="${c.id}">${c.interviewStatus === 'Slot Missed' ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg> ' : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg> '}${actionLabel}</button></td>
                   </tr>
@@ -466,7 +466,7 @@ function renderJobDetailPanes(job: Job) {
               ${displayFunctionalCands.length === 0 ? '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--color-text-faint);">No candidates match the current filters. Try resetting or adjusting them.</td></tr>' : ''}
               ${displayFunctionalCands.map(c => {
         const initials = c.name!.split(' ').map(n => n[0]).join('');
-        const sourceIcon = c.source === 'Direct Link' ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>';
+        const sourceIcon = c.entryMethod === 'direct_link' ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>';
         return `
                   <tr data-candidate-id="${c.id}">
                     <td><input type="checkbox" class="table-checkbox-row" /></td>
@@ -482,7 +482,7 @@ function renderJobDetailPanes(job: Job) {
                     <td><a href="#" class="report-link report-new" data-cand-id="${c.id}">Report <span class="new-badge">New</span> <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a></td>
                     <td><span class="interview-score-dot ${scoreColor(c.interviewScore)}"></span> ${c.interviewScore != null ? c.interviewScore : '—'}</td>
                     <td><span class="cheat-prob-badge ${cheatColor(c.cheatProbability)}">${c.cheatProbability ? '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg> ' + c.cheatProbability : '—'}</span></td>
-                    <td><span class="source-badge">${sourceIcon} ${c.source || '—'}</span></td>
+                    <td><span class="source-badge">${sourceIcon} ${sourceLabel(c.entryMethod)}</span></td>
                     <td>${screeningBadge(c.recruiterScreening)}</td>
                     <td>
                       <select class="action-select-status" data-cand-id="${c.id}">

@@ -198,6 +198,7 @@ class ApplicantOut(BaseModel):
     email: str
     phone: Optional[str]
     source: Optional[ApplicantSource]
+    entry_method: Optional[str] = None
     remarks: Optional[str]
     match_score: Optional[float] = None
     resume_analysis_report: Optional[str] = None
@@ -235,6 +236,7 @@ class AddApplicantIn(BaseModel):
     email: EmailStr
     phone: Optional[str] = None
     source: Optional[ApplicantSource] = None
+    entry_method: Optional[str] = None   # how added: bulk_upload | direct_link | ats
     recruiter_screening: Optional[str] = None
     recruiter_screening_score: Optional[float] = None
     attempted_at: Optional[datetime] = None

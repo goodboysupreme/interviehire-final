@@ -10,6 +10,7 @@
 import { createTopic, createQuestionBlueprint, toFunctionalParameters, toScreeningQuestions } from './blueprint-engine';
 import { request, API_BASE, apiLogin, apiSignup, apiMe, apiLogout, isAuthed, clearAuthed, apiOnboarding, apiListOrganisations, apiSwitchContext } from '../auth-client';
 import { defaultInterviewSettings } from './state';
+import { SOURCE_LABELS } from './escape';
 import type { Job, Candidate, CandidateReport, TeamMember } from '../types/models';
 
 // Auth + HTTP primitives live in ../auth-client.js (dependency-free so the lean
@@ -162,7 +163,7 @@ export async function ensureBackendApplicantId(c2: Candidate, jobId: string) {
   return created.id;
 }
 
-export async function apiAddApplicant(jobId: string, { name, email, phone, source }: { name?: string; email?: string | null; phone?: string | null; source?: string } = {}) {
+export async function apiAddApplicant(jobId: string, { name, email, phone, source, entryMethod }: { name?: string; email?: string | null; phone?: string | null; source?: string; entryMethod?: string | null } = {}) {
   const data = await request(`/jobs/${jobId}/applicants`, {
     method: 'POST',
     body: {
@@ -173,6 +174,9 @@ export async function apiAddApplicant(jobId: string, { name, email, phone, sourc
       // Recruiter Screening); 'functional' → functional_status=pending; omitted
       // → Resume Analysis only. Sent only when provided so existing callers are unaffected.
       ...(source ? { source } : {}),
+      // How the candidate was added (bulk_upload | direct_link | ats). Independent of
+      // `source` (which is overloaded for stage routing) — drives the "Source" column.
+      ...(entryMethod ? { entry_method: entryMethod } : {}),
     },
   } as any);
   return mapApplicantOutToCandidate(data);
@@ -503,6 +507,10 @@ function mapApplicantOutToCandidate(a: any = {}): Candidate {
     jobApplied: a.job_role_title || a.role_name || '',
     status: status,
     source: a.source || 'ATS',
+    // Input method for the "Source" column. Prefer the explicit entry_method; fall back
+    // to a *labelable* legacy `source` only (scheduled/functional/null → null → "—").
+    entryMethod: SOURCE_LABELS[a.entry_method] ? a.entry_method
+      : (SOURCE_LABELS[a.source] ? a.source : null),
     interviewStatus: mapInterviewStatus(rawStatus),
     interviewScore: rawScore ?? a.overall_interview_score ?? null,
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,

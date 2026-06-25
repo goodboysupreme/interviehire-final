@@ -236,6 +236,8 @@ export interface Candidate {
   jobId?: string | null;
   status?: CandidateStatus | string;
   source?: string;
+  /** How the candidate entered the pipeline (entry_method): bulk_upload | direct_link | ats — drives the "Source" column. */
+  entryMethod?: string | null;
   score?: string | number;
   registeredOn?: string;
   attemptedAt?: string | null;
