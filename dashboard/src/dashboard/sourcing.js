@@ -504,7 +504,18 @@ function navigateToSourcing(jobId, targetStage = null) {
   if (fileRes) fileRes.value = '';
 
   // Default mode & tab
-  switchSourcingMode('schedule');
+  currentSourcingMode = 'schedule';
+  if (targetStage === 'resume') {
+    switchSourcingTab('resumes');
+  } else {
+    switchSourcingTab('csv');
+  }
+
+  // Ensure all grid cards are always displayed as flex since mode selector is gone
+  const csvCard = document.getElementById('card-src-csv');
+  const manualCard = document.getElementById('card-src-manual');
+  if (csvCard) csvCard.style.display = 'flex';
+  if (manualCard) manualCard.style.display = 'flex';
 
   setTimeout(updateAllSlidingPills, 50);
   soundEngine.playChime([329.63, 392.00, 523.25], 0.15, 0.08);
@@ -520,22 +531,11 @@ function switchSourcingMode(mode) {
     btn.classList.toggle('active', btnMode === mode);
   });
 
-  // Show/Hide Grid cards based on active mode
+  // Ensure all grid cards are always displayed as flex since mode selector is gone
   const csvCard = document.getElementById('card-src-csv');
   const manualCard = document.getElementById('card-src-manual');
-
-  if (mode === 'analyse') {
-    if (csvCard) csvCard.style.display = 'none';
-    if (manualCard) manualCard.style.display = 'none';
-    
-    // Default to Resumes tab for Analyse mode
-    if (currentSourcingTab !== 'resumes' && currentSourcingTab !== 'ats') {
-      currentSourcingTab = 'resumes';
-    }
-  } else {
-    if (csvCard) csvCard.style.display = 'flex';
-    if (manualCard) manualCard.style.display = 'flex';
-  }
+  if (csvCard) csvCard.style.display = 'flex';
+  if (manualCard) manualCard.style.display = 'flex';
 
   // Refresh active tab views
   switchSourcingTab(currentSourcingTab);
@@ -913,7 +913,7 @@ async function importResumesCandidates() {
   const backendIds = await persistImportedCandidates(importedCandIds, activeJob);
   navigateToJobDetail(AppState.activeJobId);
 
-  if (currentSourcingMode === 'analyse' && !currentTargetStage) {
+  if (!currentTargetStage || currentTargetStage === 'resume') {
     setTimeout(() => {
       runBulkResumeAnalysis(backendIds, activeJob);
     }, 600);
@@ -1227,9 +1227,9 @@ function addCandidateToAppState(name, email, phone, job, resumeText, targetStage
   } else if (targetStage === 'functional') {
     status = 'Functional';
   } else if (targetStage === 'resume' || !targetStage) {
-    status = currentSourcingMode === 'analyse' ? 'Resume' : 'Screening';
+    status = 'Resume';
   } else {
-    status = 'Screening';
+    status = 'Resume';
   }
   const score = '—';
 
