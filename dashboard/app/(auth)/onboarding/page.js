@@ -1,85 +1,136 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthShell, ErrorBanner, SubmitButton } from '../AuthShell';
-import { apiOnboarding, apiMe, isAuthed } from '../../../src/auth-client.js';
+import { apiMe, isAuthed, clearAuthed } from '../../../src/auth-client.js';
+import { request } from '../../../src/auth-client.js';
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ orgName: '', website: '', location: '' });
+  const [form, setForm] = useState({
+    org_name: '',
+    domain: '',
+    contact_email: '',
+    website_link: '',
+    location: '',
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [ready, setReady] = useState(false);
 
-  // Onboarding needs a session AND a still-org-less account. Bounce anyone who
-  // already has an org straight to the dashboard.
+  // Guard: redirect to /login if not authed, redirect to /dashboard if already onboarded.
   useEffect(() => {
-    if (!isAuthed()) { router.replace('/login'); return; }
+    if (!isAuthed()) {
+      router.replace('/login');
+      return;
+    }
     let cancelled = false;
     apiMe()
       .then((me) => {
         if (cancelled) return;
-        if (me && !me.onboarding_required) { router.replace('/dashboard'); return; }
-        setReady(true);
+        // If they already have an org, skip onboarding.
+        if (me && !me.onboarding_required) router.replace('/dashboard');
       })
-      .catch(() => { if (!cancelled) router.replace('/login'); });
+      .catch(() => {
+        if (!cancelled) {
+          clearAuthed();
+          router.replace('/login');
+        }
+      });
     return () => { cancelled = true; };
   }, [router]);
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (key) => (e) => {
+    setForm({ ...form, [key]: e.target.value });
+  };
 
   async function onSubmit(e) {
     e.preventDefault();
     if (loading) return;
-    if (form.orgName.trim().length < 2) { setError('Please enter your organisation name.'); return; }
+    if (!form.org_name.trim()) {
+      setError('Organisation name is required.');
+      return;
+    }
     setError('');
     setLoading(true);
     try {
-      await apiOnboarding({
-        org_name: form.orgName.trim(),
-        website_link: form.website.trim() || undefined,
-        location: form.location.trim() || undefined,
+      await request('/auth/onboarding', {
+        method: 'POST',
+        body: {
+          org_name: form.org_name.trim(),
+          domain: form.domain.trim() || undefined,
+          contact_email: form.contact_email.trim() || undefined,
+          website_link: form.website_link.trim() || undefined,
+          location: form.location.trim() || undefined,
+        },
       });
       router.replace('/dashboard');
     } catch (err) {
-      const msg = (err && err.message) || 'Could not set up your workspace.';
-      // Already onboarded in another tab/session — just proceed.
-      if (/already set up/i.test(msg)) { router.replace('/dashboard'); return; }
-      setError(msg);
+      setError((err && err.message) || 'Could not complete onboarding. Please try again.');
       setLoading(false);
     }
   }
 
-  if (!ready) return null;
-
   return (
     <AuthShell
       title="Set up your workspace"
-      subtitle="Name your organisation to create your own isolated hiring workspace."
+      subtitle="Tell us a bit about your organisation to get started."
+      footer={<>Wrong account? <a className="auth-link" href="/login">Sign in with a different email</a></>}
     >
       <form className="auth-form" onSubmit={onSubmit} noValidate>
         <ErrorBanner message={error} />
 
         <div className="auth-field">
-          <label className="auth-label" htmlFor="orgName">Organisation name</label>
-          <input id="orgName" className="auth-input" type="text" autoComplete="organization"
-            placeholder="Acme Inc." value={form.orgName} onChange={set('orgName')} autoFocus required />
+          <label className="auth-label" htmlFor="org_name">Organisation name <span style={{ color: '#f87171' }}>*</span></label>
+          <input
+            id="org_name"
+            className="auth-input"
+            type="text"
+            placeholder="Acme Corp"
+            value={form.org_name}
+            onChange={set('org_name')}
+            autoFocus
+            required
+          />
         </div>
 
         <div className="auth-field">
-          <label className="auth-label" htmlFor="website">Website <span style={{ opacity: 0.5 }}>(optional)</span></label>
-          <input id="website" className="auth-input" type="text" autoComplete="url"
-            placeholder="https://acme.com" value={form.website} onChange={set('website')} />
+          <label className="auth-label" htmlFor="domain">Domain (optional)</label>
+          <input
+            id="domain"
+            className="auth-input"
+            type="text"
+            placeholder="acme.com"
+            value={form.domain}
+            onChange={set('domain')}
+          />
         </div>
 
         <div className="auth-field">
-          <label className="auth-label" htmlFor="location">Location <span style={{ opacity: 0.5 }}>(optional)</span></label>
-          <input id="location" className="auth-input" type="text" autoComplete="address-level2"
-            placeholder="San Francisco, CA" value={form.location} onChange={set('location')} />
+          <label className="auth-label" htmlFor="contact_email">Contact email (optional)</label>
+          <input
+            id="contact_email"
+            className="auth-input"
+            type="email"
+            placeholder="hr@acme.com"
+            value={form.contact_email}
+            onChange={set('contact_email')}
+          />
         </div>
 
-        <SubmitButton loading={loading} idle="Create workspace" busy="Creating…" />
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="location">Location (optional)</label>
+          <input
+            id="location"
+            className="auth-input"
+            type="text"
+            placeholder="Bengaluru, India"
+            value={form.location}
+            onChange={set('location')}
+          />
+        </div>
+
+        <SubmitButton loading={loading} idle="Complete setup →" busy="Setting up…" />
       </form>
     </AuthShell>
   );
