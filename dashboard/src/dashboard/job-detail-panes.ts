@@ -1064,12 +1064,7 @@ function buildAddApplicantsPanel(paneKey, count) {
       <div class="ra-candidates-header">
         <h3 class="ra-candidates-title">Candidates in ${label}</h3>
         <div style="display:flex;align-items:center;gap:10px;">
-          <span class="ra-candidates-count">${count} candidate${count !== 1 ? 's' : ''}</span>
-          <button class="btn-jd-primary btn-add-applicants-stage" id="btn-add-applicants-${paneKey}" data-stage="${paneKey}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            + Add Applicants
-          </button>
-        </div>
+          <span class="ra-candidates-count">${count} candidate${count !== 1 ? 's' : ''}</span>        </div>
       </div>
     </div>
   `;
