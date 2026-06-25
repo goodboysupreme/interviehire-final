@@ -177,6 +177,19 @@ export async function apiAddApplicant(jobId, { name, email, phone, source } = {}
   return mapApplicantOutToCandidate(data);
 }
 
+// Bulk-add candidates to a job in one round-trip.
+// `applicants` is an array of { name, email, phone?, source? }.
+// `source` values: 'scheduled' → Recruiter Screening, 'functional' → Functional Interview,
+// 'bulk_upload' → Resume Analysis (no interview slot set).
+export async function apiAddApplicantsBulk(jobId, applicants = []) {
+  const data = await request(`/jobs/${jobId}/applicants/bulk`, {
+    method: 'POST',
+    body: { applicants },
+  });
+  const list = Array.isArray(data) ? data : [];
+  return list.map(mapApplicantOutToCandidate);
+}
+
 export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'screening') {
   const data = await request(`/jobs/applicants/${applicantId}/schedule`, {
     method: 'POST',
@@ -553,3 +566,24 @@ function mapFullReportToCandidateReport(data) {
   if (data.evaluated && report && Array.isArray(report.questionBreakdown)) return report;
   return null;
 }
+
+// ── Preferences ──────────────────────────────────────────────────────────────
+// Fetch the signed-in user's saved preferences from the backend.
+// Returns { theme: 'dark'|'light'|'system' }, or null if the request fails.
+export async function apiGetPreferences() {
+  try {
+    return await request('/settings/preferences');
+  } catch {
+    return null;
+  }
+}
+
+// Persist a preference change. Only the fields you pass are updated.
+export async function apiUpdatePreferences(data) {
+  try {
+    return await request('/settings/preferences', { method: 'PUT', body: data });
+  } catch {
+    return null;
+  }
+}
+

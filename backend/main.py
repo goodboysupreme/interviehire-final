@@ -51,6 +51,16 @@ def init_db():
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS screening_questions TEXT;"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS interview_settings TEXT;"))
         conn.execute(text("""ALTER TABLE "InterviewSession" ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}';"""))
+
+        # user_preferences table — stores per-account settings (theme etc.)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                theme VARCHAR NOT NULL DEFAULT 'dark',
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+        """))
+
         conn.commit()
 
         # Add 'super_admin' to usertype enum in postgresql

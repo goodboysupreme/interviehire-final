@@ -1050,6 +1050,8 @@ function initMountBindings() {
         careerThemeSelect.value = themeVal;
       }
       triggerChartThemeRedraw();
+      // Persist to the backend (fire-and-forget)
+      if (typeof window.IH_updateTheme === 'function') window.IH_updateTheme(themeVal).catch(() => {});
       if (isLight) {
         soundEngine.playChime([329.63, 392.00, 523.25], 0.12, 0.1);
       } else {
@@ -1064,8 +1066,11 @@ function initMountBindings() {
       const isCurrentLight = document.body.classList.contains('light-theme');
       if (shouldBeLight !== isCurrentLight) {
         document.body.classList.toggle('light-theme', shouldBeLight);
-        localStorage.setItem('IntervieHire-theme', shouldBeLight ? 'light' : 'dark');
+        const themeVal = shouldBeLight ? 'light' : 'dark';
+        localStorage.setItem('IntervieHire-theme', themeVal);
         triggerChartThemeRedraw();
+        // Persist to the backend (fire-and-forget)
+        if (typeof window.IH_updateTheme === 'function') window.IH_updateTheme(themeVal).catch(() => {});
         if (shouldBeLight) {
           soundEngine.playChime([329.63, 392.00, 523.25], 0.12, 0.1);
         } else {

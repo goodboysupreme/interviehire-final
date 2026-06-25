@@ -6,6 +6,7 @@ import { initDashboardPage } from '../../src/dashboard/index.js';
 import { STAGE_SLUG_TO_TAB } from '../../src/dashboard/job-stages.js';
 import { html } from '../../src/html/dashboard-crystal';
 import { apiMe, apiLogout, isAuthed, clearAuthed } from '../../src/auth-client.js';
+import { apiGetPreferences, apiUpdatePreferences } from '../../src/dashboard/api.js';
 
 const ROLE_LABEL = { super_admin: 'Admin', org_admin: 'Org. Admin', member: 'Member' };
 
@@ -115,19 +116,47 @@ export default function DashboardShell({ children }) {
     };
   }, [router]);
 
+  // Expose a global theme updater so the vanilla mount.js theme toggle can
+  // persist its changes to the backend without importing React or the API client.
+  useEffect(() => {
+    window.IH_updateTheme = async (theme) => {
+      await apiUpdatePreferences({ theme });
+    };
+    return () => { delete window.IH_updateTheme; };
+  }, []);
+
   // Authoritative session check against the backend.
   useEffect(() => {
     let cancelled = false;
     const optimistic = isAuthed();
 
     apiMe()
-      .then((me) => {
+      .then(async (me) => {
         if (cancelled) return;
         // Org-less accounts (new signups) must finish onboarding before the
         // dashboard — keeps every dashboard session scoped to a real org.
         if (me && me.onboarding_required) { router.replace('/onboarding'); return; }
+
         setUser(me);
-        setPhase('authed');
+
+        // Load saved theme preference and apply it before the dashboard surface
+        // renders — avoids a flash of wrong theme on initial load.
+        const prefs = await apiGetPreferences();
+        if (!cancelled && prefs && prefs.theme) {
+          const savedTheme = prefs.theme;
+          // Sync to localStorage so the vanilla mount.js reads the same value.
+          try { localStorage.setItem('IntervieHire-theme', savedTheme); } catch {}
+          if (savedTheme === 'light') {
+            document.body.classList.add('light-theme');
+          } else if (savedTheme === 'dark') {
+            document.body.classList.remove('light-theme');
+          } else if (savedTheme === 'system') {
+            const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+            document.body.classList.toggle('light-theme', prefersLight);
+          }
+        }
+
+        if (!cancelled) setPhase('authed');
       })
       .catch((err) => {
         if (cancelled) return;

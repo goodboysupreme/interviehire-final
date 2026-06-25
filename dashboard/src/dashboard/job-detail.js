@@ -24,6 +24,8 @@ function navigateToJobDetail(jobId, stage = 'overview') {
   const initialTab = document.querySelector(`.jd-tab[data-jd-tab="${stage}"]`) ? stage : 'overview';
 
   AppState.activeJobId = jobId;
+  AppState.activeScreeningSubtab = null;
+  AppState.activeFunctionalSubtab = null;
   AppState.activeTab = 'job-detail';
   pushUrl(jobStageUrl(jobId, initialTab));
 

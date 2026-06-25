@@ -21,6 +21,90 @@ import { AppState } from './state.js';
 import { activeCandidateSubTabs } from './vetting-data.js';
 import { getDataSource, isApiMode, apiScheduleCandidate, apiUpdateApplicant, apiMoveApplicantStage, ensureBackendApplicantId, apiUploadResumes } from './api.js';
 
+function getCandidateSubtab(c) {
+  const status = c.interviewStatus;
+  if (status === 'Slot Missed') {
+    return 'window-missed';
+  }
+  if (status === 'Completed') {
+    return 'completed';
+  }
+  if (status === 'Incomplete' || status === 'Evaluating' || status === 'Attempting') {
+    return 'partially-completed';
+  }
+  return 'scheduled';
+}
+
+function getOrInitActiveSubtab(stageKey, cands) {
+  const counts = {
+    'window-missed': 0,
+    'scheduled': 0,
+    'partially-completed': 0,
+    'completed': 0
+  };
+  cands.forEach(c => {
+    counts[getCandidateSubtab(c)]++;
+  });
+
+  const stateKey = stageKey === 'screening' ? 'activeScreeningSubtab' : 'activeFunctionalSubtab';
+  
+  if (AppState[stateKey] && counts[AppState[stateKey]] > 0) {
+    return AppState[stateKey];
+  }
+  
+  const order = ['window-missed', 'scheduled', 'partially-completed', 'completed'];
+  for (const tab of order) {
+    if (counts[tab] > 0) {
+      AppState[stateKey] = tab;
+      return tab;
+    }
+  }
+  
+  AppState[stateKey] = 'scheduled';
+  return 'scheduled';
+}
+
+function buildSubtabsBarHTML(stageKey, counts, activeSubtab) {
+  const tabs = [
+    {
+      id: 'window-missed',
+      label: 'Window Missed',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`
+    },
+    {
+      id: 'scheduled',
+      label: 'Scheduled',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`
+    },
+    {
+      id: 'partially-completed',
+      label: 'Partially Completed',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>`
+    },
+    {
+      id: 'completed',
+      label: 'Completed',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`
+    }
+  ];
+
+  return `
+    <div class="stage-subtabs-bar" data-stage="${stageKey}">
+      ${tabs.map(tab => {
+        const isActive = tab.id === activeSubtab ? 'active' : '';
+        const count = counts[tab.id] || 0;
+        return `
+          <button class="stage-subtab-btn ${isActive}" data-subtab="${tab.id}" data-stage="${stageKey}">
+            ${tab.icon}
+            <span>${tab.label}</span>
+            <span class="subtab-count">${count}</span>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
 function renderJobDetailPanes(job) {
   const searchVal = document.getElementById('jd-candidate-search').value.trim().toLowerCase();
   
@@ -183,9 +267,24 @@ function renderJobDetailPanes(job) {
   if (screeningList) {
     const screeningCands = jobCandidates.filter(c => c.status === 'Screening');
     const addApplicantsHTML = buildAddApplicantsPanel('screening', screeningCands.length);
+
+    const counts = {
+      'window-missed': 0,
+      'scheduled': 0,
+      'partially-completed': 0,
+      'completed': 0
+    };
+    screeningCands.forEach(c => {
+      counts[getCandidateSubtab(c)]++;
+    });
+
+    const activeSubtab = getOrInitActiveSubtab('screening', screeningCands);
+    const subtabsHTML = buildSubtabsBarHTML('screening', counts, activeSubtab);
+
     if (screeningCands.length === 0) {
       screeningList.innerHTML = `
         ${addApplicantsHTML}
+        ${subtabsHTML}
         <div class="jd-empty-pane">
           <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
           <p>Recruiter Screening — No candidates in this stage</p>
@@ -193,10 +292,12 @@ function renderJobDetailPanes(job) {
       `;
     } else {
       const allScreeningCands = screeningCands;
-      const displayScreeningCands = applyStageFilters(screeningCands, 'screening');
+      const subtabFilteredCands = screeningCands.filter(c => getCandidateSubtab(c) === activeSubtab);
+      const displayScreeningCands = applyStageFilters(subtabFilteredCands, 'screening');
       const sf = AppState.stageFilters.screening;
       screeningList.innerHTML = `
         ${addApplicantsHTML}
+        ${subtabsHTML}
         <div class="stage-table-container">
           <div class="stage-table-filters">
             <span class="filter-chip" data-filter="interviewStatus" data-stage="screening">${sf.interviewStatus.length ? '⊗' : '⊕'} Interview Status ${sf.interviewStatus.length ? `<span class="filter-chip-val">${sf.interviewStatus.join(', ')}</span>` : ''}</span>
@@ -277,9 +378,24 @@ function renderJobDetailPanes(job) {
   if (functionalList) {
     const functionalCands = jobCandidates.filter(c => c.status === 'Functional');
     const addApplicantsFnHTML = buildAddApplicantsPanel('functional', functionalCands.length);
+
+    const countsFn = {
+      'window-missed': 0,
+      'scheduled': 0,
+      'partially-completed': 0,
+      'completed': 0
+    };
+    functionalCands.forEach(c => {
+      countsFn[getCandidateSubtab(c)]++;
+    });
+
+    const activeSubtabFn = getOrInitActiveSubtab('functional', functionalCands);
+    const subtabsFnHTML = buildSubtabsBarHTML('functional', countsFn, activeSubtabFn);
+
     if (functionalCands.length === 0) {
       functionalList.innerHTML = `
         ${addApplicantsFnHTML}
+        ${subtabsFnHTML}
         <div class="jd-empty-pane">
           <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>
           <p>Functional Interview — No candidates in this stage</p>
@@ -305,10 +421,12 @@ function renderJobDetailPanes(job) {
       };
 
       const allFunctionalCands = functionalCands;
-      const displayFunctionalCands = applyStageFilters(functionalCands, 'functional');
+      const subtabFilteredFnCands = functionalCands.filter(c => getCandidateSubtab(c) === activeSubtabFn);
+      const displayFunctionalCands = applyStageFilters(subtabFilteredFnCands, 'functional');
       const ff = AppState.stageFilters.functional;
       functionalList.innerHTML = `
         ${addApplicantsFnHTML}
+        ${subtabsFnHTML}
         <div class="stage-table-container">
           <div class="stage-table-filters">
             <span class="filter-chip" data-filter="interviewStatus" data-stage="functional">${ff.interviewStatus.length ? '⊗' : '⊕'} Interview Status ${ff.interviewStatus.length ? `<span class="filter-chip-val">${ff.interviewStatus.join(', ')}</span>` : ''}</span>
@@ -404,6 +522,17 @@ function renderJobDetailPanes(job) {
   // Bind actions
   const pane = document.getElementById('view-job-detail');
   if (pane) {
+    pane.querySelectorAll('.stage-subtab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        soundEngine.playClick();
+        const stage = btn.getAttribute('data-stage');
+        const subtab = btn.getAttribute('data-subtab');
+        const stateKey = stage === 'screening' ? 'activeScreeningSubtab' : 'activeFunctionalSubtab';
+        AppState[stateKey] = subtab;
+        renderJobDetailPanes(job);
+      });
+    });
+
     pane.querySelectorAll('.subtab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const candId = btn.parentElement.getAttribute('data-cand-id');
@@ -933,10 +1062,6 @@ function buildAddApplicantsPanel(paneKey, count) {
         <h3 class="ra-candidates-title">Candidates in ${label}</h3>
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="ra-candidates-count">${count} candidate${count !== 1 ? 's' : ''}</span>
-          <button id="btn-add-applicants-${paneKey}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;font-size:0.78rem;font-weight:500;color:var(--color-gold);background:rgba(var(--color-gold-rgb),0.08);border:1px solid rgba(var(--color-gold-rgb),0.2);cursor:pointer;transition:all 0.2s ease;font-family:var(--font-body);">
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            Add Applicants
-          </button>
         </div>
       </div>
       <div id="add-applicants-panel-${paneKey}" style="display:none;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:20px;margin-bottom:16px;">

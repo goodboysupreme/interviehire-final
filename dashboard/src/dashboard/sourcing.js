@@ -21,27 +21,24 @@ let csvParsedCandidates = [];
 let uploadedFiles = [];
 let currentSourcingMode = 'schedule';
 let currentSourcingTab = 'csv';
+// The stage the user was on when they clicked '+ Add Applicants'.
+// 'resume' | 'screening' | 'functional' | null (pipeline start)
+let currentTargetStage = null;
 
 function initSourcing() {
-  // Bind click on '+ Add Applicants' inside job detail overview
-  const addApplicantsBtn = document.querySelector('.jd-actions .btn-jd-primary') || document.querySelector('.btn-jd-primary');
+  // Bind click on '+ Add Applicants' in the job-detail top bar.
+  // Always navigate to the Sourcing view, but carry the current stage as context
+  // so candidates land in the right stage (screening / functional / resume).
+  const addApplicantsBtn = document.getElementById('btn-jd-add-applicants') || document.querySelector('.jd-actions .btn-jd-primary');
   if (addApplicantsBtn) {
     addApplicantsBtn.addEventListener('click', (e) => {
       e.preventDefault();
       const activeTabEl = document.querySelector('.jd-tab.active');
-      const tabId = activeTabEl ? activeTabEl.getAttribute('data-jd-tab') : 'overview';
-      if (['resume', 'screening', 'functional'].includes(tabId)) {
-        const inlineBtn = document.getElementById(`btn-add-applicants-${tabId}`);
-        if (inlineBtn) {
-          inlineBtn.click();
-          const panel = document.getElementById(`add-applicants-panel-${tabId}`);
-          if (panel) {
-            panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
-          return;
-        }
-      }
-      navigateToSourcing(AppState.activeJobId);
+      const tabId = activeTabEl ? activeTabEl.getAttribute('data-jd-tab') : null;
+      // Map the job-detail tab id to a sourcing stage
+      const stageMap = { resume: 'resume', screening: 'screening', functional: 'functional' };
+      const stage = stageMap[tabId] || null;
+      navigateToSourcing(AppState.activeJobId, stage);
     });
   }
 
@@ -447,12 +444,14 @@ function initSourcing() {
   }
 }
 
-function navigateToSourcing(jobId) {
+function navigateToSourcing(jobId, targetStage = null) {
   const job = AppState.jobs.find(j => j.id === jobId);
   if (!job) return;
 
   AppState.activeJobId = jobId;
   AppState.activeTab = 'sourcing';
+  // Store the target stage so all import functions know where candidates land.
+  currentTargetStage = targetStage;
   pushUrl(`/dashboard/sourcing/${jobId}`);
 
   // Highlight Jobs sidebar
@@ -465,6 +464,19 @@ function navigateToSourcing(jobId) {
   const srcBcJobname = document.getElementById('src-bc-jobname');
   if (srcBcJobname) {
     srcBcJobname.textContent = shortName;
+  }
+
+  // Stage context banner
+  const stageCtx = document.getElementById('sourcing-stage-context');
+  const stageLabel = document.getElementById('sourcing-stage-label');
+  if (stageCtx && stageLabel) {
+    if (targetStage) {
+      const stageNames = { resume: 'Resume Analysis', screening: 'Recruiter Screening', functional: 'Functional Interview' };
+      stageLabel.textContent = stageNames[targetStage] || targetStage;
+      stageCtx.style.display = 'flex';
+    } else {
+      stageCtx.style.display = 'none';
+    }
   }
 
   // Switch view section visibility
@@ -655,11 +667,36 @@ async function importCsvCandidates() {
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
-  const localIds = csvParsedCandidates.map(cand =>
-    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob));
+  // Determine the ApplicantSource to send to backend based on which stage triggered sourcing.
+  // 'screening' stage → source='scheduled' (screening_status=pending on backend)
+  // 'functional' stage → source='functional' (functional_status=pending on backend)
+  // null / 'resume' → source='bulk_upload' (resume analysis stage)
+  const sourceMap = { screening: 'scheduled', functional: 'functional', resume: 'bulk_upload' };
+  const apiSource = sourceMap[currentTargetStage] || 'bulk_upload';
+
+  csvParsedCandidates.forEach(cand => {
+    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob, null, currentTargetStage);
+  });
+
+
+  // Persist to backend if in API mode
+  import('./api.js').then(({ isApiMode, apiAddApplicantsBulk }) => {
+    if (isApiMode() && activeJob._backend) {
+      const payload = csvParsedCandidates.map(cand => ({
+        name: cand.name,
+        email: cand.email,
+        phone: cand.phone || null,
+        source: apiSource,
+      }));
+      apiAddApplicantsBulk(activeJob.id, payload).catch(err => {
+        console.warn('CSV bulk add to backend failed:', err);
+      });
+    }
+  }).catch(() => {});
 
   soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
-  showPremiumToast(`Successfully imported ${csvParsedCandidates.length} candidate(s) into "${escapeHTML(activeJob.roleName)}".`, "success");
+  const stageLabel = currentTargetStage ? { screening: 'Recruiter Screening', functional: 'Functional Interview', resume: 'Resume Analysis' }[currentTargetStage] : activeJob.roleName;
+  showPremiumToast(`Successfully imported ${csvParsedCandidates.length} candidate(s) into "${escapeHTML(stageLabel || activeJob.roleName)}".`, 'success');
 
   // Reset
   csvParsedCandidates = [];
@@ -845,12 +882,12 @@ async function importResumesCandidates() {
     const name = identity.name || fallbackName;
     const email = identity.email || createPlaceholderEmail(name);
     const phone = identity.phone || '';
-    const candId = addCandidateToAppState(name, email, phone, activeJob, file.textContent);
+    const candId = addCandidateToAppState(name, email, phone, activeJob, file.textContent, currentTargetStage);
     importedCandIds.push(candId);
   });
 
   soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
-  showPremiumToast(`Imported ${uploadedFiles.length} candidate(s) — running AI analysis...`, "success");
+  showPremiumToast(`Imported ${uploadedFiles.length} candidate(s) — running AI analysis...`, 'success');
 
   uploadedFiles = [];
   document.getElementById('resumes-preview-box').style.display = 'none';
@@ -876,7 +913,7 @@ async function importResumesCandidates() {
   const backendIds = await persistImportedCandidates(importedCandIds, activeJob);
   navigateToJobDetail(AppState.activeJobId);
 
-  if (currentSourcingMode === 'analyse') {
+  if (currentSourcingMode === 'analyse' && !currentTargetStage) {
     setTimeout(() => {
       runBulkResumeAnalysis(backendIds, activeJob);
     }, 600);
@@ -1110,11 +1147,33 @@ async function importManualQueue() {
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
-  const localIds = sourcingQueue.map(cand =>
-    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob));
+  // Determine ApplicantSource for backend based on targetStage
+  const sourceMap = { screening: 'scheduled', functional: 'functional', resume: 'bulk_upload' };
+  const apiSource = sourceMap[currentTargetStage] || 'bulk_upload';
+
+  sourcingQueue.forEach(cand => {
+    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob, null, currentTargetStage);
+  });
+
+
+  // Persist each candidate to backend if in API mode
+  import('./api.js').then(({ isApiMode, apiAddApplicantsBulk }) => {
+    if (isApiMode() && activeJob._backend) {
+      const payload = sourcingQueue.map(cand => ({
+        name: cand.name,
+        email: cand.email,
+        phone: cand.phone || null,
+        source: apiSource,
+      }));
+      apiAddApplicantsBulk(activeJob.id, payload).catch(err => {
+        console.warn('Manual bulk add to backend failed:', err);
+      });
+    }
+  }).catch(() => {});
 
   soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
-  showPremiumToast(`Successfully imported ${sourcingQueue.length} candidate(s) into "${escapeHTML(activeJob.roleName)}".`, "success");
+  const stageLabel = currentTargetStage ? { screening: 'Recruiter Screening', functional: 'Functional Interview', resume: 'Resume Analysis' }[currentTargetStage] : activeJob.roleName;
+  showPremiumToast(`Successfully imported ${sourcingQueue.length} candidate(s) into "${escapeHTML(stageLabel || activeJob.roleName)}".`, 'success');
 
   sourcingQueue = [];
   renderManualQueue();
@@ -1136,7 +1195,11 @@ async function importManualQueue() {
 }
 
 // === Shared Candidate Insertion helper ===
-function addCandidateToAppState(name, email, phone, job, resumeText) {
+// targetStage: 'resume' | 'screening' | 'functional' | null
+// Null / 'resume' → status='Resume' (enters resume analysis)
+// 'screening'     → status='Screening'
+// 'functional'    → status='Functional'
+function addCandidateToAppState(name, email, phone, job, resumeText, targetStage) {
   const identity = extractResumeIdentity(resumeText, name);
   const candidateName = identity.name || normalizeCandidateName(name) || name;
   const candidateEmail = identity.email || email || createPlaceholderEmail(candidateName);
@@ -1156,7 +1219,18 @@ function addCandidateToAppState(name, email, phone, job, resumeText) {
   const formatHour = hours % 12 || 12;
   const dateStr = `${now.getDate().toString().padStart(2, '0')} ${months[now.getMonth()]} ${now.getFullYear()}, ${formatHour.toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${ampm}`;
 
-  const status = currentSourcingMode === 'analyse' ? 'Resume' : 'Screening';
+  // Determine which pipeline stage this candidate enters.
+  // targetStage takes priority; falls back to currentSourcingMode for backwards-compat.
+  let status;
+  if (targetStage === 'screening') {
+    status = 'Screening';
+  } else if (targetStage === 'functional') {
+    status = 'Functional';
+  } else if (targetStage === 'resume' || !targetStage) {
+    status = currentSourcingMode === 'analyse' ? 'Resume' : 'Screening';
+  } else {
+    status = 'Screening';
+  }
   const score = '—';
 
   AppState.candidates.push({
@@ -1269,4 +1343,5 @@ function showPremiumToast(message, type = 'success', action = null) {
 }
 
 
-export { addCandidateToAppState, addCandidateToManualQueue, checkAllResumesDone, cleanNameLine, createPlaceholderEmail, csvParsedCandidates, currentSourcingMode, currentSourcingTab, downloadCsvTemplate, extractCandidateNameFromFilename, extractExplicitResumeName, extractHeaderResumeName, extractResumeEmail, extractResumeIdentity, extractResumeLinkedIn, extractResumePhone, extractTextFromResumeFile, handleCsvFileSelect, handleResumesFileSelect, importCsvCandidates, importManualQueue, importResumesCandidates, initSourcing, isLikelyPersonName, nameFromEmail, navigateToSourcing, normalizeCandidateName, normalizeResumeText, parseCsvFile, processCsvText, removeCandidateFromQueue, renderCsvPreview, renderManualQueue, showPremiumToast, simulateResumesParsing, sourcingQueue, switchSourcingMode, switchSourcingTab, uploadedFiles };
+export { addCandidateToAppState, addCandidateToManualQueue, checkAllResumesDone, cleanNameLine, createPlaceholderEmail, csvParsedCandidates, currentSourcingMode, currentSourcingTab, currentTargetStage, downloadCsvTemplate, extractCandidateNameFromFilename, extractExplicitResumeName, extractHeaderResumeName, extractResumeEmail, extractResumeIdentity, extractResumeLinkedIn, extractResumePhone, extractTextFromResumeFile, handleCsvFileSelect, handleResumesFileSelect, importCsvCandidates, importManualQueue, importResumesCandidates, initSourcing, isLikelyPersonName, nameFromEmail, navigateToSourcing, normalizeCandidateName, normalizeResumeText, parseCsvFile, processCsvText, removeCandidateFromQueue, renderCsvPreview, renderManualQueue, showPremiumToast, simulateResumesParsing, sourcingQueue, switchSourcingMode, switchSourcingTab, uploadedFiles };
+

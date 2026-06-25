@@ -908,7 +908,6 @@ body.light-theme .afd-item:hover { background: rgba(0,0,0,0.03); }
   cursor: not-allowed;
 }
 
-
 /* ── Interview Analysis tab (job-level saved AI interview reports) ───────────── */
 .ia-header {
   display: flex;
@@ -970,3 +969,144 @@ body.light-theme .afd-item:hover { background: rgba(0,0,0,0.03); }
 .ia-rec-no         { color: #dc2626; background: rgba(239, 68, 68, 0.12);  border: 1px solid rgba(239, 68, 68, 0.30); }
 .ia-rec-strong-no  { color: #b91c1c; background: rgba(239, 68, 68, 0.16);  border: 1px solid rgba(239, 68, 68, 0.40); }
 .ia-rec-na         { color: var(--color-text-faint, #64748b); }
+
+/* Subtabs bar container */
+
+.stage-subtabs-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 6px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--glass-border);
+  width: fit-content;
+}
+
+body.light-theme .stage-subtabs-bar {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+
+/* Individual subtab button */
+.stage-subtab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-body);
+}
+
+.stage-subtab-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.stage-subtab-btn span {
+  display: inline-block;
+}
+
+.stage-subtab-btn .subtab-count {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-faint);
+  margin-left: 2px;
+}
+
+/* Icon colors for all states (even inactive) */
+.stage-subtab-btn[data-subtab="window-missed"] svg {
+  color: #ef4444; /* red icon */
+  stroke: #ef4444;
+}
+.stage-subtab-btn[data-subtab="scheduled"] svg {
+  color: #f59e0b; /* yellow icon */
+  stroke: #f59e0b;
+}
+.stage-subtab-btn[data-subtab="partially-completed"] svg {
+  color: #8b5cf6; /* purple icon */
+  stroke: #8b5cf6;
+}
+.stage-subtab-btn[data-subtab="completed"] svg {
+  color: #3b82f6; /* blue icon */
+  stroke: #3b82f6;
+}
+
+/* Active styles */
+.stage-subtab-btn.active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--glass-border);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.stage-subtab-btn.active[data-subtab="window-missed"] {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+.stage-subtab-btn.active[data-subtab="window-missed"] .subtab-count {
+  color: #ef4444;
+}
+
+.stage-subtab-btn.active[data-subtab="scheduled"] {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+.stage-subtab-btn.active[data-subtab="scheduled"] .subtab-count {
+  color: #f59e0b;
+}
+
+.stage-subtab-btn.active[data-subtab="partially-completed"] {
+  color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.1);
+  border-color: rgba(139, 92, 246, 0.25);
+}
+.stage-subtab-btn.active[data-subtab="partially-completed"] .subtab-count {
+  color: #8b5cf6;
+}
+
+.stage-subtab-btn.active[data-subtab="completed"] {
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+.stage-subtab-btn.active[data-subtab="completed"] .subtab-count {
+  color: #3b82f6;
+}
+
+/* Light Theme overrides for Active/Inactive states */
+body.light-theme .stage-subtab-btn.active {
+  background: #ffffff;
+  border-color: #e5e7eb;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+body.light-theme .stage-subtab-btn.active[data-subtab="window-missed"] {
+  color: #ef4444;
+  background: #fef2f2;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+body.light-theme .stage-subtab-btn.active[data-subtab="scheduled"] {
+  color: #d97706;
+  background: #fffbeb;
+  border-color: rgba(217, 119, 6, 0.2);
+}
+body.light-theme .stage-subtab-btn.active[data-subtab="partially-completed"] {
+  color: #6d28d9;
+  background: #f5f3ff;
+  border-color: rgba(109, 40, 217, 0.2);
+}
+body.light-theme .stage-subtab-btn.active[data-subtab="completed"] {
+  color: #2563eb;
+  background: #eff6ff;
+  border-color: rgba(37, 99, 235, 0.2);
+}
+
