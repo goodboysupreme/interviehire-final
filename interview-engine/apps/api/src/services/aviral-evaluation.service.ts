@@ -124,7 +124,7 @@ export async function evaluateInterviewWithAviral(sessionId: string): Promise<an
   // Proctoring (integrity): list every violation, penalise the overall score, and
   // expose the full score analysis. eventType/severity/metadata come from ProctoringLog.
   const proctoring = buildProctoringSummary(
-    session.proctoringLogs.map((log) => ({
+    session.proctoringLogs.map((log: any) => ({
       eventType: log.eventType,
       severity: log.severity,
       occurredAt: log.occurredAt,
