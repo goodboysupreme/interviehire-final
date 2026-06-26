@@ -236,6 +236,10 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     return () => clearTimeout(timer);
   }, [phase, router]);
 
+  if (pathname === '/dashboard/random') {
+    return <>{children}</>;
+  }
+
   if (phase !== 'authed') return <VerifyingScreen />;
 
   return (
