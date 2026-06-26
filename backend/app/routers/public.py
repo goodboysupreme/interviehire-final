@@ -34,7 +34,11 @@ def oauth_connect(user_id: str):
                 "token_uri": "https://oauth2.googleapis.com/token",
             }
         },
-        scopes=["https://www.googleapis.com/auth/calendar"]
+        scopes=["https://www.googleapis.com/auth/calendar"],
+        # No session store between /oauth/connect and /oauth2callback to carry a
+        # PKCE code_verifier, so disable PKCE (classic web flow uses the client
+        # secret). Otherwise Google returns "Missing code verifier" at exchange.
+        autogenerate_code_verifier=False,
     )
     flow.redirect_uri = settings.GOOGLE_REDIRECT_URI
     authorization_url, state = flow.authorization_url(
@@ -59,7 +63,8 @@ def oauth2callback(code: str, state: str, db: Session = Depends(get_db)):
                 "token_uri": "https://oauth2.googleapis.com/token",
             }
         },
-        scopes=["https://www.googleapis.com/auth/calendar"]
+        scopes=["https://www.googleapis.com/auth/calendar"],
+        autogenerate_code_verifier=False,
     )
     flow.redirect_uri = settings.GOOGLE_REDIRECT_URI
     flow.fetch_token(code=code)
@@ -74,9 +79,11 @@ def oauth2callback(code: str, state: str, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
         
-    user.google_refresh_token = credentials.refresh_token
-    user.google_client_id = settings.GOOGLE_CLIENT_ID
-    user.google_client_secret = settings.GOOGLE_CLIENT_SECRET
+    # Only the refresh token is needed; get_calendar_service() reads the client
+    # id/secret from global settings, so we don't persist them per-user (avoids a
+    # dependency on optional google_client_* columns).
+    if credentials.refresh_token:
+        user.google_refresh_token = credentials.refresh_token
     db.commit()
     
     return HTMLResponse(content="""
