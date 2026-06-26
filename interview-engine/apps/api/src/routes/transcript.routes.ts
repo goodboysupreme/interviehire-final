@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
 import { prisma } from '../lib/prisma.js';
+import { ensureSession } from '../lib/ensure-session.js';
 import {
   finalizeTranscript,
   loadEvents,
@@ -149,7 +150,10 @@ export async function transcriptRoutes(app: FastifyInstance) {
   // so the candidate always gets a report. Returns { evaluation, engine }.
   app.post('/:sessionId/report', async (req: any, reply) => {
     const { sessionId } = req.params;
-    const session = await prisma.interviewSession.findUnique({ where: { id: sessionId }, select: { id: true } });
+    // Self-heal: provision from the applicant if the session is missing. (It
+    // normally already exists by report time; ensureSession only resets when
+    // genuinely absent, so no interview data is ever lost here.)
+    const session = await ensureSession(sessionId);
     if (!session) return reply.code(404).send({ error: 'Session not found' });
 
     await finalizeTranscript(sessionId);

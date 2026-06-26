@@ -152,6 +152,38 @@ def get_public_interview_session_info(session_id: UUID, db: Session = Depends(ge
         "scheduled_at": scheduled_at.isoformat() if scheduled_at else None
     }
 
+
+@router.post("/interview-session/{applicant_id}/ensure")
+def ensure_interview_session(applicant_id: UUID, db: Session = Depends(get_db)):
+    """Self-healing provisioning for the candidate interview room.
+
+    The room is keyed by the applicant id as the session id (the scheduled email
+    link is `.../interviewcandidateroom?sessionId={applicant.id}`). The engine
+    only finds a session when `sync_applicant_to_ai` created an InterviewSession
+    with `id == applicant.id`. If the candidate reaches the room before that sync
+    ran (or it failed), the engine 404s with "Session not found". The engine
+    calls this endpoint server-to-server when it can't find the session, so the
+    link always works regardless of how the candidate arrived.
+
+    IMPORTANT: `sync_applicant_to_ai` RESETS the session (clears transcript +
+    evaluation), so the engine MUST only call this when the session is genuinely
+    missing — never after the interview has produced data.
+    """
+    applicant = db.query(Applicant).filter(Applicant.id == applicant_id).first()
+    if not applicant:
+        raise HTTPException(status_code=404, detail="Applicant not found.")
+
+    from app.utils.ai_sync import sync_applicant_to_ai
+    session = sync_applicant_to_ai(db, applicant)
+    if not session:
+        raise HTTPException(status_code=500, detail="Failed to provision interview session.")
+
+    return {
+        "session_id": str(session.id),
+        "status": session.status.value if session.status else "SCHEDULED",
+    }
+
+
 @router.get("/confirm/{token}", response_class=HTMLResponse)
 def confirm_interview_slot(token: str, db: Session = Depends(get_db)):
     applicant = db.query(Applicant).filter(Applicant.scheduling_token == token).first()

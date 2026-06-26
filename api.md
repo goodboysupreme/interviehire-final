@@ -6,6 +6,7 @@
 
 > Append-only, newest first. A new entry is **prepended** here whenever a route is added, modified, refactored, or removed. Never rewrite history.
 
+- **2026-06-26** — Added POST /api/public/interview-session/{applicant_id}/ensure (`backend/app/routers/public.py`) — self-healing provisioning of the engine InterviewSession from the Applicant. Called server-to-server by the interview engine (`interview.routes.ts` GET /sessions/:id + POST /sessions/:id/start, `transcript.routes.ts` POST /:sessionId/report) via a new `ensureSession` helper when a session is missing, fixing the candidate-room "Session not found" error. Engine reads new `BACKEND_URL` env to reach the backend.
 - **2026-06-25** — Added optional `entry_method` (string, nullable, default null) to `AddApplicantIn` and `ApplicantOut`; `BulkApplicantsIn` inherits it (wraps `List[AddApplicantIn]`). It records the candidate's input method — how they were added to the pipeline (`bulk_upload` | `ats` | `direct_link` | `career_page`) — independent of the overloaded `source` field (which is reused for stage routing: scheduled/functional). Stored as a plain nullable VARCHAR, NOT a Postgres enum. `POST /api/jobs/{job_id}/applicants/upload-resumes` now defaults newly-created applicants' `entry_method` to `"bulk_upload"` (existing matched applicants left unchanged). Affected routes: `POST /api/jobs/{job_id}/applicants`, `POST /api/jobs/{job_id}/applicants/bulk`, `POST /api/jobs/{job_id}/applicants/upload-resumes`, `PATCH /api/jobs/applicants/{applicant_id}`, `POST /api/jobs/applicants/{applicant_id}/schedule`, and `GET /api/jobs/{job_id}/responses` (all return `ApplicantOut`).
 - **2026-06-24** — Documented Talent Finder (13 routes under `/api/talent-finder`), merged in from origin/master's talent-finder feature (`backend/app/talent_finder/`, mounted in `main.py`). Route groups: search (POST /search, GET /search/{search_id}/status, GET /search/{search_id}/results), candidates (GET·DELETE /candidates/{candidate_id}, POST /candidates/{candidate_id}/shortlist·/reject·/opt-out·/move-to-pipeline·/generate-outreach), extract-brief (POST /extract-brief), import/csv (POST /import/csv), sources (GET /sources, POST /sources/configure). All require auth (get_current_user) and are org-scoped via get_active_org_id; responses are plain dicts (no Pydantic response_model).
 - **2026-06-24** — Added PATCH /api/team/{user_id} — update a team member's designation, user_type, and/or status (org-scoped). New UpdateMemberIn request schema.
@@ -1523,6 +1524,28 @@ Response:
 Status codes: 200 OK; 404 "Session not found." (no Applicant with that id); 422 if session_id is not a valid UUID.
 
 Notes: Plain dict (no Pydantic model). Identical stage-resolution logic to /schedule/{token}.
+
+#### POST /api/public/interview-session/{applicant_id}/ensure
+
+Self-healing provisioning of the engine `InterviewSession` for the candidate room. The room is keyed by the Applicant id as the session id (scheduled link `.../interviewcandidateroom?sessionId={applicant.id}`). When the interview engine cannot find a session with that id, it calls this endpoint **server-to-server** to provision one from the applicant's job + rubric (runs `sync_applicant_to_ai`), then re-reads it from the shared DB. This makes the link work even if the backend's schedule/advance sync never ran or failed.
+
+- **Auth:** public (no cookie/JWT). Access gated only by knowing the Applicant UUID. Intended for engine-to-backend calls.
+- **Path params:** `applicant_id`:UUID — the Applicant.id, used as the interview session id.
+- **Query params:** none
+
+Request: none
+
+Response:
+```json
+{
+  "session_id": "string",
+  "status": "SCHEDULED|IN_PROGRESS|COMPLETED|EVALUATED"
+}
+```
+
+Status codes: 200 OK; 404 "Applicant not found."; 500 "Failed to provision interview session." (sync returned no session); 422 if applicant_id is not a valid UUID.
+
+Notes: Plain dict (no Pydantic model). **`sync_applicant_to_ai` RESETS the session** (clears transcript + evaluation), so the engine only calls this when the session is genuinely missing — never after the interview has produced data.
 
 #### GET /api/public/confirm/{token}
 

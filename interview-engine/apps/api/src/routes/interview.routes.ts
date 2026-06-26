@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../lib/prisma.js';
+import { ensureSession } from '../lib/ensure-session.js';
 import { evaluateInterview, generatePdfReport, getCandidateFacingReport } from '../services/evaluation.service.js';
 import nodemailer from 'nodemailer';
 import fs from 'node:fs';
@@ -231,8 +232,14 @@ export async function interviewRoutes(app: FastifyInstance) {
     return { sessionId: session.id, companyId: company.id, roleId: role.id, candidateId: candidate.id };
   });
 
-  app.get('/sessions/:id', async (req:any) => prisma.interviewSession.findUnique({where:{id:req.params.id}, include:{company:true,candidate:true,jobRole:{include:{questions:true}},proctoringLogs:true}}));
+  app.get('/sessions/:id', async (req:any) => {
+    // Self-heal: provision the session from the applicant if it doesn't exist
+    // yet (e.g. candidate opened the scheduled link before the backend synced).
+    await ensureSession(req.params.id);
+    return prisma.interviewSession.findUnique({where:{id:req.params.id}, include:{company:true,candidate:true,jobRole:{include:{questions:true}},proctoringLogs:true}});
+  });
   app.post('/sessions/:id/start', async (req:any, reply:any) => {
+    await ensureSession(req.params.id);
     const session = await prisma.interviewSession.findUniqueOrThrow({
       where: { id: req.params.id },
       include: { candidate: true, jobRole: { include: { questions: { where: { isActive: true }, orderBy: { createdAt: 'asc' } } } } },
