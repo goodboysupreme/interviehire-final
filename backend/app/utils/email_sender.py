@@ -1,3 +1,4 @@
+import os
 import smtplib
 import logging
 import base64
@@ -7,6 +8,17 @@ from email.mime.multipart import MIMEMultipart
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Railway (and most PaaS hosts) BLOCK outbound SMTP ports (25/465/587). With no
+# socket timeout, smtplib.SMTP() then HANGS on connect for ~2 minutes before the
+# OS gives up — which froze the whole /schedule request and made scheduling look
+# broken. When we're on such a host (no Resend key to fall back to), skip the
+# SMTP attempt entirely so the request returns instantly. Invites are delivered
+# via Resend (RESEND_API_KEY) or Google Calendar instead.
+SMTP_CONNECT_TIMEOUT = 10  # seconds — never let a dead SMTP socket block a request
+
+def _smtp_blocked() -> bool:
+    return bool(os.getenv("RAILWAY_ENVIRONMENT"))
 
 def send_email_via_resend(to_email: str, subject: str, html_content: str, attachment_content: str | None = None, attachment_name: str | None = None) -> bool:
     if not settings.RESEND_API_KEY:
@@ -59,6 +71,10 @@ def send_html_email(to_email: str, subject: str, html_content: str) -> bool:
         print(f"\n==================== [SIMULATION EMAIL] ====================\nTo: {to_email}\nSubject: {subject}\n============================================================\n")
         return True
 
+    if _smtp_blocked():
+        logger.warning(f"SMTP is blocked on this host (Railway); skipping SMTP send to {to_email}. Configure RESEND_API_KEY or use Google Calendar invites.")
+        return False
+
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     msg['From'] = settings.SMTP_FROM or "hr@interviehire.com"
@@ -68,7 +84,7 @@ def send_html_email(to_email: str, subject: str, html_content: str) -> bool:
     msg.attach(part2)
 
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=SMTP_CONNECT_TIMEOUT) as server:
             server.starttls()
             server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
             server.sendmail(settings.SMTP_FROM or "hr@interviehire.com", to_email, msg.as_string())
@@ -429,6 +445,10 @@ def send_ical_invitation_email(
         print(f"\n==================== [SIMULATION iCAL EMAIL] ====================\nTo: {candidate_email}\nSubject: {subject}\n=================================================================\n")
         return True
 
+    if _smtp_blocked():
+        logger.warning(f"SMTP is blocked on this host (Railway); skipping iCal SMTP send to {candidate_email}. Invite is delivered via Google Calendar (sendUpdates='all') when connected, or set RESEND_API_KEY.")
+        return False
+
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     from_email = settings.SMTP_FROM or "hr@interviehire.com"
@@ -450,7 +470,7 @@ def send_ical_invitation_email(
     msg.attach(part_cal)
 
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=SMTP_CONNECT_TIMEOUT) as server:
             server.starttls()
             server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
             server.sendmail(settings.SMTP_FROM or "hr@interviehire.com", candidate_email, msg.as_string())

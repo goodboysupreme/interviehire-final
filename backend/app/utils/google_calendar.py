@@ -74,8 +74,10 @@ def create_calendar_event(summary: str, description: str, candidate_email: str, 
 
     try:
         calendar_id = settings.ORGANIZER_CALENDAR_ID or 'primary'
-        # Set sendUpdates to 'none' to suppress native Google Calendar email notifications
-        event = service.events().insert(calendarId=calendar_id, body=event_body, sendUpdates='none').execute()
+        # sendUpdates='all' so Google emails the candidate the calendar invite
+        # directly. This is our PRIMARY invite-delivery channel on Railway, which
+        # blocks outbound SMTP (so our own email_sender can't reach the candidate).
+        event = service.events().insert(calendarId=calendar_id, body=event_body, sendUpdates='all').execute()
         event_id = event.get('id')
         logger.info(f"Google Calendar Event created successfully: {event_id}")
         return event_id
@@ -101,8 +103,9 @@ def update_calendar_event(event_id: str, start_time: datetime, duration_minutes:
         event['start'] = {'dateTime': start_time.isoformat(), 'timeZone': 'UTC'}
         event['end'] = {'dateTime': end_time.isoformat(), 'timeZone': 'UTC'}
         
-        # Set sendUpdates to 'none' to suppress native Google Calendar email notifications
-        service.events().update(calendarId=calendar_id, eventId=event_id, body=event, sendUpdates='none').execute()
+        # sendUpdates='all' so the candidate gets the updated-time invite email
+        # from Google directly (Railway blocks our own outbound SMTP).
+        service.events().update(calendarId=calendar_id, eventId=event_id, body=event, sendUpdates='all').execute()
         logger.info(f"Google Calendar Event updated successfully: {event_id}")
         return True
     except Exception as e:
