@@ -371,6 +371,14 @@ export default function Interview() {
   const clock = `${mm}:${ss}`;
   const question = questions[questionIndex] || { text: 'No questions loaded.', tag: 'Interview', hint: 'Please wait.' };
 
+  // Right panel feed: only what Lina (the AI interviewer) says. `messages` only
+  // ever receives interviewer lines (welcome + ai_response) — the candidate's
+  // speech goes to the transcript hook, never here — so answers are excluded.
+  const linaQuestions = useMemo(
+    () => messages.filter((m) => m.speaker === 'ai' && m.text),
+    [messages]
+  );
+
   const isMobileDevice = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
   const mobileBlocked = !!interviewSettings && interviewSettings.allowMobile === false && isMobileDevice;
   const wl = !!(interviewSettings && interviewSettings.whiteLabel && branding);
@@ -561,10 +569,10 @@ export default function Interview() {
             <div className="status-pill">
               <i className="red-dot" /> Live · Associate
             </div>
-          </section>
 
-          <aside className="right-stack">
-            <section className="candidate-panel">
+            {/* Candidate self-view — a mini picture-in-picture window pinned to
+                the bottom-right of Lina's panel, like Google Meet. */}
+            <section className="candidate-panel candidate-pip">
               <video
                 ref={videoRef}
                 muted
@@ -588,7 +596,9 @@ export default function Interview() {
                 <div className="mic">{micOn ? '🎙' : '🔇'}</div>
               </div>
             </section>
+          </section>
 
+          <aside className="right-stack">
             <section className="question-card">
               <div className="question-top">
                 <div>
@@ -617,6 +627,29 @@ export default function Interview() {
                 >
                   NEXT ›
                 </button>
+              </div>
+            </section>
+
+            {/* Lina's questions only — sourced from the interviewer transcript /
+                voice. Candidate answers are never shown here. */}
+            <section className="lina-transcript">
+              <div className="lina-transcript-head">
+                <span className="lina-transcript-title">Questions from Lina</span>
+                <span className="lina-transcript-sub">Interviewer transcript</span>
+              </div>
+              <div className="lina-transcript-body">
+                {linaQuestions.length === 0 ? (
+                  <p className="lina-transcript-empty">
+                    Lina’s questions will appear here as she asks them.
+                  </p>
+                ) : (
+                  linaQuestions.map((m, i) => (
+                    <div key={i} className="lina-line">
+                      <span className="lina-line-badge">Lina</span>
+                      <p>{m.text}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </section>
           </aside>

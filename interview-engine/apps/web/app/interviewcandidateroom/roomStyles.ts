@@ -210,12 +210,55 @@ export const roomStyles = `
   .hd-audio { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; letter-spacing: .28em; text-transform: uppercase; }
   .hd-audio i { width: 7px; height: 7px; border-radius: 999px; background: var(--lime); }
 
-  .right-stack { display: grid; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; gap: 30px; }
+  .right-stack { display: grid; min-height: 0; grid-template-rows: auto minmax(0, 1fr); gap: 30px; }
 
   .candidate-panel {
     position: relative; min-height: 340px; overflow: hidden; border-radius: 20px;
     background: #020617;
   }
+
+  /* Candidate self-view as a Google-Meet-style mini window pinned to the
+     bottom-right of Lina's avatar panel. */
+  .candidate-panel.candidate-pip {
+    position: absolute; z-index: 4;
+    right: 24px; bottom: 24px;
+    width: clamp(200px, 20vw, 280px);
+    height: auto; min-height: 0; aspect-ratio: 16 / 10;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, .18);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .55);
+  }
+  .candidate-pip .you-pill { top: 10px; left: 10px; padding: 5px 11px; font-size: 11px; }
+  .candidate-pip .candidate-footer { padding: 12px; }
+  .candidate-pip .mini-bars { height: 20px; }
+  .candidate-pip .mini-bars i:nth-child(1) { height: 9px; }
+  .candidate-pip .mini-bars i:nth-child(2) { height: 15px; }
+  .candidate-pip .mini-bars i:nth-child(3) { height: 19px; }
+  .candidate-pip .mini-bars i:nth-child(4) { height: 12px; }
+  .candidate-pip .mini-bars i:nth-child(5) { height: 16px; }
+  .candidate-pip .mic { width: 30px; height: 30px; font-size: 13px; }
+
+  /* Right panel: live feed of only Lina's questions (interviewer transcript). */
+  .lina-transcript {
+    display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 20px;
+    background: var(--panel); box-shadow: 0 24px 90px rgba(0, 0, 0, .28);
+  }
+  .lina-transcript-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 18px 24px; border-bottom: 1px solid rgba(255, 255, 255, .07);
+  }
+  .lina-transcript-title { font: 800 16px Manrope, sans-serif; letter-spacing: -.02em; }
+  .lina-transcript-sub { color: #778195; font-size: 11px; letter-spacing: .24em; text-transform: uppercase; }
+  .lina-transcript-body { display: flex; flex-direction: column; gap: 14px; padding: 18px 24px; overflow-y: auto; }
+  .lina-transcript-empty { margin: 0; color: #64748b; font-size: 13px; line-height: 1.6; }
+  .lina-line { display: grid; gap: 7px; }
+  .lina-line-badge {
+    justify-self: start;
+    border: 1px solid rgba(249, 87, 56, .4); border-radius: 999px; color: var(--orange);
+    padding: 3px 10px; font-size: 10px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
+  }
+  .lina-line p { margin: 0; color: #dbe4f3; font-size: 14px; line-height: 1.55; }
 
   .candidate-video {
     position: absolute; inset: 0; width: 100%; height: 100%;
