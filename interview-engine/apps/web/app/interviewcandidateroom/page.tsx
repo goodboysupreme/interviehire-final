@@ -259,16 +259,28 @@ export default function Interview() {
         // its integrity scoring — detection is gated until this is called.
         startProctoringSession();
         // Honor the recruiter's interview settings enforced server-side at /start
-        // (disabled / late / reattempt / CV required). On a block, surface the
-        // message and stop instead of proceeding into a broken room.
-        const startRes = await fetch(`${API_URL}/api/interview/sessions/${sessionId}/start`, { method: 'POST' });
-        if (!startRes.ok) {
-          let msg = 'This interview could not be started.';
-          try { const j = await startRes.json(); if (j?.error) msg = j.error; } catch { /* keep default */ }
-          setStartError(msg);
-          try { endProctoringSession(); } catch { /* noop */ }
-          setRecordingStatus('');
-          return;
+        // (disabled / late / reattempt / CV required). Those are deliberate POLICY
+        // rejections — the server returns a 4xx with a specific {error,code} — so we
+        // surface the message and stop. A 5xx / network failure is a transient or
+        // infra error (NOT a policy block); in that case we proceed into the
+        // interview rather than dead-ending the candidate (matches prior behaviour).
+        try {
+          const startRes = await fetch(`${API_URL}/api/interview/sessions/${sessionId}/start`, { method: 'POST' });
+          if (!startRes.ok && startRes.status >= 400 && startRes.status < 500) {
+            let msg = 'This interview could not be started.';
+            try { const j = await startRes.json(); if (j?.error) msg = j.error; } catch { /* keep default */ }
+            setStartError(msg);
+            try { endProctoringSession(); } catch { /* noop */ }
+            setRecordingStatus('');
+            return;
+          }
+          if (!startRes.ok) {
+            // 5xx / unexpected — log and continue so the interview still runs.
+            console.error('start returned', startRes.status);
+          }
+        } catch (startErr) {
+          // Network error reaching /start — continue rather than block.
+          console.error('start request failed', startErr);
         }
         startRecording();
         // Begin transcript capture: mark t=0 and stream candidate speech via the
